@@ -5,12 +5,20 @@ var path = require('path');
 var cookieParser = require('cookie-parser');
 var logger = require('morgan');
 var multer = require('multer');
+var cors = require('cors');
+var corsOptions = require('./config/cors');
 
 var indexRouter = require('./routes/index');
 var usersRouter = require('./routes/users');
 var adminRouter = require('./routes/admin');
+var levelsRouter = require('./routes/levels');
+var contentRouter = require('./routes/content');
+var investmentRouter = require('./routes/investment');
 
 var app = express();
+
+// CORS configuration
+app.use(cors(corsOptions));
 
 app.use(logger('dev'));
 app.use(express.json());
@@ -24,6 +32,9 @@ app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 app.use('/', indexRouter);
 app.use('/users', usersRouter);
 app.use('/admin', adminRouter);
+app.use('/levels', levelsRouter);
+app.use('/content', contentRouter);
+app.use('/investment', investmentRouter);
 
 // Error handling middleware
 app.use((err, req, res, next) => {
@@ -34,6 +45,14 @@ app.use((err, req, res, next) => {
                 message: 'File too large. Maximum size is 5MB.'
             });
         }
+    }
+    
+    // Handle CORS errors
+    if (err.message === 'Not allowed by CORS') {
+        return res.status(403).json({
+            success: false,
+            message: 'CORS: Origin not allowed'
+        });
     }
     
     console.error(err.stack);

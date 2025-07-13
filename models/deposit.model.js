@@ -14,7 +14,7 @@ const depositSchema = new mongoose.Schema({
     paymentMethod: {
         type: String,
         required: true,
-        enum: ['bank_transfer', 'upi', 'paytm', 'phonepe', 'other']
+        enum: ['bank_transfer', 'upi', 'paytm', 'phonepe', 'crypto']
     },
     paymentId: {
         type: String,
