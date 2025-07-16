@@ -1267,7 +1267,7 @@ POST /admin/signup
 - Referral bonus (10%) is automatically processed when admin approves first deposit
 - File uploads are limited to 5MB and only accept image files
 - JWT tokens expire after 7 days
-- All API responses follow a consistent format with `success`, `message`, and `data` fields
+- All API responses follow a consistent format with `success`, `message`, and `data` fields 
 - **Level system automatically calculates and updates when users join or wallet balances change**
 - **Character levels are based on referral chain depth**
 - **Digit levels are based on direct referrals and wallet criteria**

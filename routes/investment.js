@@ -128,6 +128,23 @@ router.put('/admin/plans/:planId', auth, upload.single('image'), async (req, res
         }
 
         const { planId } = req.params;
+        
+        // Validate planId
+        if (!planId || planId === 'undefined' || planId === 'null') {
+            return res.status(400).json({
+                success: false,
+                message: 'Invalid plan ID provided'
+            });
+        }
+
+        // Validate ObjectId format
+        if (!require('mongoose').Types.ObjectId.isValid(planId)) {
+            return res.status(400).json({
+                success: false,
+                message: 'Invalid plan ID format'
+            });
+        }
+
         const updateData = { ...req.body };
 
         // If new image uploaded, update image field
@@ -181,6 +198,23 @@ router.patch('/admin/plans/:planId/toggle', auth, async (req, res) => {
         }
 
         const { planId } = req.params;
+        
+        // Validate planId
+        if (!planId || planId === 'undefined' || planId === 'null') {
+            return res.status(400).json({
+                success: false,
+                message: 'Invalid plan ID provided'
+            });
+        }
+
+        // Validate ObjectId format
+        if (!require('mongoose').Types.ObjectId.isValid(planId)) {
+            return res.status(400).json({
+                success: false,
+                message: 'Invalid plan ID format'
+            });
+        }
+
         const plan = await InvestmentPlan.findById(planId);
 
         if (!plan) {
@@ -220,6 +254,23 @@ router.delete('/admin/plans/:planId', auth, async (req, res) => {
         }
 
         const { planId } = req.params;
+        
+        // Validate planId
+        if (!planId || planId === 'undefined' || planId === 'null') {
+            return res.status(400).json({
+                success: false,
+                message: 'Invalid plan ID provided'
+            });
+        }
+
+        // Validate ObjectId format
+        if (!require('mongoose').Types.ObjectId.isValid(planId)) {
+            return res.status(400).json({
+                success: false,
+                message: 'Invalid plan ID format'
+            });
+        }
+
         const plan = await InvestmentPlan.findByIdAndDelete(planId);
 
         if (!plan) {
@@ -308,6 +359,14 @@ router.post('/purchase', auth, async (req, res) => {
             });
         }
 
+        // Validate planId format
+        if (!require('mongoose').Types.ObjectId.isValid(planId)) {
+            return res.status(400).json({
+                success: false,
+                message: 'Invalid plan ID format'
+            });
+        }
+
         // Find the investment plan
         const plan = await InvestmentPlan.findById(planId);
         if (!plan || !plan.isActive) {
@@ -317,13 +376,13 @@ router.post('/purchase', auth, async (req, res) => {
             });
         }
 
-        // Check if user has sufficient balance
+        // Check if user has sufficient balance in investment wallet
         const user = await User.findById(req.user.id);
-        if (user.normalWallet.balance < investmentAmount) {
+        if (user.investmentWallet.balance < investmentAmount) {
             return res.status(400).json({
                 success: false,
-                message: 'Insufficient balance in normal wallet',
-                currentBalance: user.normalWallet.balance,
+                message: 'Insufficient balance in investment wallet',
+                currentBalance: user.investmentWallet.balance,
                 requiredAmount: investmentAmount
             });
         }
@@ -343,11 +402,11 @@ router.post('/purchase', auth, async (req, res) => {
 
         await userInvestment.save();
 
-        // Deduct amount from user's normal wallet
-        user.normalWallet.balance -= investmentAmount;
-        user.normalWallet.transactions.push({
+        // Deduct amount from user's investment wallet
+        user.investmentWallet.balance -= investmentAmount;
+        user.investmentWallet.transactions.push({
             type: 'withdrawal',
-            amount: investmentAmount,
+            amount: -investmentAmount,
             description: `Investment in ${plan.title}`,
             status: 'approved'
         });
@@ -360,7 +419,7 @@ router.post('/purchase', auth, async (req, res) => {
             data: {
                 investment: userInvestment,
                 plan: plan,
-                remainingBalance: user.normalWallet.balance
+                remainingBalance: user.investmentWallet.balance
             }
         });
 

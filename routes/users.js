@@ -425,19 +425,19 @@ router.post('/transfer', auth, async (req, res) => {
         user[fromWallet].transactions.push({
             type: 'transfer',
             amount: -amount,
-            description: `Transfer to ${toWallet} wallet`,
+                description: `Transfer to ${toWallet} wallet`,
             date: transferDate,
-            status: 'approved'
-        });
+                status: 'approved'
+            });
 
         // Credit transaction
         user[toWallet].transactions.push({
             type: 'transfer',
-            amount: amount,
+                amount: amount,
             description: `Transfer from ${fromWallet} wallet`,
             date: transferDate,
-            status: 'approved'
-        });
+                status: 'approved'
+            });
 
         await user.save();
 
@@ -550,17 +550,17 @@ router.post('/transfer-to-user', auth, async (req, res) => {
             amount: -amount,
             description: `Transfer to ${targetUser.name} (${referralCode})`,
             date: transferDate,
-            status: 'approved'
-        });
+                status: 'approved'
+            });
 
         // Credit transaction for receiver
         targetUser.normalWallet.transactions.push({
             type: 'transfer_from_user',
-            amount: amount,
+                amount: amount,
             description: `Transfer from ${user.name} (${user.referralCode})`,
             date: transferDate,
-            status: 'approved'
-        });
+                status: 'approved'
+            });
 
         await user.save();
         await targetUser.save();

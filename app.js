@@ -14,11 +14,21 @@ var adminRouter = require('./routes/admin');
 var levelsRouter = require('./routes/levels');
 var contentRouter = require('./routes/content');
 var investmentRouter = require('./routes/investment');
+var withdrawalRouter = require('./routes/withdrawal');
+var adminDashboardRouter = require('./routes/admin-dashboard');
+var adminRevenueRouter = require('./routes/admin-revenue');
+var adminDistributionRouter = require('./routes/admin-distribution');
+var adminLuckyDrawRouter = require('./routes/admin-luckydraw');
+var luckyDrawRouter = require('./routes/luckydraw');
+var chatRouter = require('./routes/chat');
+var adminChatRouter = require('./routes/admin-chat');
+var notificationRouter = require('./routes/notification');
+var adminNotificationRouter = require('./routes/admin-notification');
 
 var app = express();
 
 // CORS configuration
-app.use(cors(corsOptions));
+app.use(cors());
 
 app.use(logger('dev'));
 app.use(express.json());
@@ -35,6 +45,16 @@ app.use('/admin', adminRouter);
 app.use('/levels', levelsRouter);
 app.use('/content', contentRouter);
 app.use('/investment', investmentRouter);
+app.use('/withdrawal', withdrawalRouter);
+app.use('/admin-dashboard', adminDashboardRouter);
+app.use('/admin-revenue', adminRevenueRouter);
+app.use('/admin-distribution', adminDistributionRouter);
+app.use('/admin-luckydraw', adminLuckyDrawRouter);
+app.use('/luckydraw', luckyDrawRouter);
+app.use('/chat', chatRouter);
+app.use('/admin-chat', adminChatRouter);
+app.use('/notification', notificationRouter);
+app.use('/admin-notification', adminNotificationRouter);
 
 // Error handling middleware
 app.use((err, req, res, next) => {
