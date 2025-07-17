@@ -167,7 +167,7 @@ router.get('/profile', auth, async (req, res) => {
             .populate('referredBy', 'name email referralCode');
 
         // Calculate potential daily income
-        const potentialDailyIncome = user.normalWallet.balance * 0.0005;
+        const potentialDailyIncome = user.normalWallet.balance * 0.005;
         
         // Check if user can claim today
         const today = new Date();
@@ -721,8 +721,8 @@ router.post('/today-my-income', auth, async (req, res) => {
             }
         }
         
-        // Calculate daily income (0.05% of normal wallet balance)
-        const dailyIncomeAmount = user.normalWallet.balance * 0.005; // 0.05% = 0.0005
+        // Calculate daily income (0.5% of normal wallet balance)
+        const dailyIncomeAmount = user.normalWallet.balance * 0.005; // 0.5% = 0.005
         
         if (dailyIncomeAmount <= 0) {
             return res.status(400).json({
@@ -740,7 +740,7 @@ router.post('/today-my-income', auth, async (req, res) => {
         user.normalWallet.transactions.push({
             type: 'daily_income',
             amount: dailyIncomeAmount,
-            description: 'Daily income credit (0.05% of normal wallet balance)',
+            description: 'Daily income credit (0.5% of normal wallet balance)',
             status: 'approved'
         });
         
@@ -792,7 +792,7 @@ router.get('/today-my-income', auth, async (req, res) => {
         }
         
         // Calculate potential daily income
-        const potentialDailyIncome = user.normalWallet.balance * 0.0005;
+        const potentialDailyIncome = user.normalWallet.balance * 0.005;
         
         res.json({
             success: true,

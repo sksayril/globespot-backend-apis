@@ -49,8 +49,8 @@ router.get('/overview', adminAuth, async (req, res) => {
         for (const user of users) {
             const userLevel = levels.find(l => l.userId.toString() === user._id.toString());
             
-            // Calculate daily income (0.05% of normal wallet)
-            const dailyIncome = user.normalWallet.balance * 0.0005;
+            // Calculate daily income (0.5% of normal wallet)
+            const dailyIncome = user.normalWallet.balance * 0.005;
             
             // Calculate level incomes
             let characterLevelIncome = 0;
@@ -142,7 +142,7 @@ router.get('/overview', adminAuth, async (req, res) => {
         totalDistribution.dailyDistribution = totalDistribution.totalDailyIncome;
         totalDistribution.weeklyDistribution = weeklyUsers.reduce((sum, user) => {
             const userLevel = levels.find(l => l.userId.toString() === user._id.toString());
-            let income = user.normalWallet.balance * 0.0005; // Daily income
+            let income = user.normalWallet.balance * 0.005; // Daily income
             
             if (userLevel) {
                 if (userLevel.characterLevel.current && user.referredBy) {
@@ -162,7 +162,7 @@ router.get('/overview', adminAuth, async (req, res) => {
         
         totalDistribution.monthlyDistribution = monthlyUsers.reduce((sum, user) => {
             const userLevel = levels.find(l => l.userId.toString() === user._id.toString());
-            let income = user.normalWallet.balance * 0.0005; // Daily income
+            let income = user.normalWallet.balance * 0.005; // Daily income
             
             if (userLevel) {
                 if (userLevel.characterLevel.current && user.referredBy) {
@@ -244,7 +244,7 @@ router.get('/daily', adminAuth, async (req, res) => {
             }
             
             // Calculate incomes
-            const dailyIncome = user.normalWallet.balance * 0.0005;
+            const dailyIncome = user.normalWallet.balance * 0.005;
             let characterLevelIncome = 0;
             let digitLevelIncome = 0;
             
@@ -388,7 +388,7 @@ router.get('/weekly', adminAuth, async (req, res) => {
                 }
                 
                 // Calculate incomes
-                const dailyIncome = user.normalWallet.balance * 0.0005;
+                const dailyIncome = user.normalWallet.balance * 0.005;
                 let characterLevelIncome = 0;
                 let digitLevelIncome = 0;
                 
@@ -521,7 +521,7 @@ router.get('/monthly', adminAuth, async (req, res) => {
                 }
                 
                 // Calculate incomes
-                const dailyIncome = user.normalWallet.balance * 0.0005;
+                const dailyIncome = user.normalWallet.balance * 0.005;
                 let characterLevelIncome = 0;
                 let digitLevelIncome = 0;
                 
@@ -626,7 +626,7 @@ router.get('/user/:userId', adminAuth, async (req, res) => {
         }
         
         // Calculate user's income breakdown
-        const dailyIncome = user.normalWallet.balance * 0.0005;
+        const dailyIncome = user.normalWallet.balance * 0.005;
         let characterLevelIncome = 0;
         let digitLevelIncome = 0;
         
@@ -738,7 +738,7 @@ router.get('/top-earners', adminAuth, async (req, res) => {
             const userLevel = levels.find(l => l.userId.toString() === user._id.toString());
             
             // Calculate incomes
-            const dailyIncome = user.normalWallet.balance * 0.0005;
+            const dailyIncome = user.normalWallet.balance * 0.005;
             let characterLevelIncome = 0;
             let digitLevelIncome = 0;
             
