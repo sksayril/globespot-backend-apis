@@ -1291,10 +1291,14 @@ async function getUplineName(uplineId) {
     return upline ? upline.name : 'Unknown';
 }
 
-// Get team income and statistics
+// Get team income and statistics with level-based calculations
 router.get('/team-income', auth, async (req, res) => {
     try {
         const userId = req.user.id;
+        const Level = require('../models/level.model');
+        
+        // Get user's level information
+        const userLevel = await Level.findOne({ userId });
         
         // Get direct referrals (level 1)
         const directReferrals = await User.find({ referredBy: userId })
@@ -1316,6 +1320,26 @@ router.get('/team-income', auth, async (req, res) => {
         const level5Users = await User.find({
             referredBy: { $in: level4Users.map(user => user._id) }
         }).select('name email phone referralCode normalWallet.balance investmentWallet.balance dailyIncome createdAt referredBy');
+
+        // Calculate level-based team income
+        let characterLevelIncome = 0;
+        let digitLevelIncome = 0;
+        
+        if (userLevel) {
+            // Character level income from direct referrals
+            if (userLevel.characterLevel.current && directReferrals.length > 0) {
+                const totalDirectReferralBalance = directReferrals.reduce((sum, user) => sum + user.normalWallet.balance, 0);
+                const percentage = userLevel.characterLevel.percentages[userLevel.characterLevel.current];
+                characterLevelIncome = (totalDirectReferralBalance * percentage) / 100;
+            }
+            
+            // Digit level income from own wallet
+            if (userLevel.digitLevel.current) {
+                const userBalance = req.user.normalWallet.balance;
+                const percentage = userLevel.digitLevel.percentages[userLevel.digitLevel.current];
+                digitLevelIncome = (userBalance * percentage) / 100;
+            }
+        }
 
         // Calculate team income by level
         const teamIncomeByLevel = {
@@ -1428,6 +1452,9 @@ router.get('/team-income', auth, async (req, res) => {
                                teamIncomeByLevel.level4.totalDailyIncome + 
                                teamIncomeByLevel.level5.totalDailyIncome;
 
+        // Calculate daily team income (level-based)
+        const dailyTeamIncome = characterLevelIncome + digitLevelIncome;
+
         res.json({
             success: true,
             message: 'Team income data retrieved successfully',
@@ -1436,7 +1463,16 @@ router.get('/team-income', auth, async (req, res) => {
                     id: req.user._id,
                     name: req.user.name,
                     email: req.user.email,
-                    referralCode: req.user.referralCode
+                    referralCode: req.user.referralCode,
+                    characterLevel: userLevel?.characterLevel?.current || null,
+                    digitLevel: userLevel?.digitLevel?.current || null
+                },
+                levelBasedIncome: {
+                    characterLevelIncome: characterLevelIncome,
+                    digitLevelIncome: digitLevelIncome,
+                    totalDailyTeamIncome: dailyTeamIncome,
+                    characterLevel: userLevel?.characterLevel?.current || null,
+                    digitLevel: userLevel?.digitLevel?.current || null
                 },
                 teamIncomeByLevel: teamIncomeByLevel,
                 totalTeamMembers: totalTeamMembers,
@@ -1452,7 +1488,8 @@ router.get('/team-income', auth, async (req, res) => {
                     totalMembers: totalTeamMembers,
                     totalIncome: totalTeamIncome,
                     totalNormalWallet: totalNormalWalletBalance,
-                    totalInvestmentWallet: totalInvestmentWalletBalance
+                    totalInvestmentWallet: totalInvestmentWalletBalance,
+                    dailyTeamIncome: dailyTeamIncome
                 }
             }
         });
@@ -1462,6 +1499,215 @@ router.get('/team-income', auth, async (req, res) => {
         res.status(500).json({
             success: false,
             message: 'Error fetching team income data',
+            error: error.message
+        });
+    }
+});
+
+// Get team income status (daily team income that can be claimed)
+router.get('/team-income-status', auth, async (req, res) => {
+    try {
+        const userId = req.user.id;
+        const Level = require('../models/level.model');
+        
+        // Get user's level information
+        const userLevel = await Level.findOne({ userId });
+        
+        // Get direct referrals
+        const directReferrals = await User.find({ referredBy: userId })
+            .select('normalWallet.balance');
+
+        // Calculate level-based team income
+        let characterLevelIncome = 0;
+        let digitLevelIncome = 0;
+        
+        if (userLevel) {
+            // Character level income from direct referrals
+            if (userLevel.characterLevel.current && directReferrals.length > 0) {
+                const totalDirectReferralBalance = directReferrals.reduce((sum, user) => sum + user.normalWallet.balance, 0);
+                const percentage = userLevel.characterLevel.percentages[userLevel.characterLevel.current];
+                characterLevelIncome = (totalDirectReferralBalance * percentage) / 100;
+            }
+            
+            // Digit level income from own wallet
+            if (userLevel.digitLevel.current) {
+                const userBalance = req.user.normalWallet.balance;
+                const percentage = userLevel.digitLevel.percentages[userLevel.digitLevel.current];
+                digitLevelIncome = (userBalance * percentage) / 100;
+            }
+        }
+
+        const dailyTeamIncome = characterLevelIncome + digitLevelIncome;
+        
+        // Check if user can claim team income today
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        
+        let canClaimTeamIncome = true;
+        let message = 'You can claim your team income';
+        
+        if (userLevel?.dailyIncome?.lastClaimed) {
+            const lastClaimed = new Date(userLevel.dailyIncome.lastClaimed);
+            lastClaimed.setHours(0, 0, 0, 0);
+            
+            if (lastClaimed.getTime() === today.getTime()) {
+                canClaimTeamIncome = false;
+                message = 'Team income already claimed today';
+            }
+        }
+        
+        res.json({
+            success: true,
+            data: {
+                canClaim: canClaimTeamIncome,
+                message: message,
+                dailyTeamIncome: dailyTeamIncome,
+                characterLevelIncome: characterLevelIncome,
+                digitLevelIncome: digitLevelIncome,
+                characterLevel: userLevel?.characterLevel?.current || null,
+                digitLevel: userLevel?.digitLevel?.current || null,
+                lastClaimed: userLevel?.dailyIncome?.lastClaimed || null,
+                totalEarned: {
+                    characterLevel: userLevel?.characterLevel?.totalEarned || 0,
+                    digitLevel: userLevel?.digitLevel?.totalEarned || 0
+                }
+            }
+        });
+    } catch (error) {
+        console.error('Error fetching team income status:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Error fetching team income status',
+            error: error.message
+        });
+    }
+});
+
+// Claim team income
+router.post('/claim-team-income', auth, async (req, res) => {
+    try {
+        const userId = req.user.id;
+        const Level = require('../models/level.model');
+        
+        // Get user's level information
+        const userLevel = await Level.findOne({ userId });
+        
+        // Check if user can claim team income today
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        
+        if (userLevel?.dailyIncome?.lastClaimed) {
+            const lastClaimed = new Date(userLevel.dailyIncome.lastClaimed);
+            lastClaimed.setHours(0, 0, 0, 0);
+            
+            if (lastClaimed.getTime() === today.getTime()) {
+                return res.status(400).json({
+                    success: false,
+                    message: 'Team income already claimed today. Please try again tomorrow.',
+                    data: {
+                        lastClaimed: userLevel.dailyIncome.lastClaimed
+                    }
+                });
+            }
+        }
+        
+        // Get direct referrals
+        const directReferrals = await User.find({ referredBy: userId })
+            .select('normalWallet.balance');
+
+        // Calculate level-based team income
+        let characterLevelIncome = 0;
+        let digitLevelIncome = 0;
+        
+        if (userLevel) {
+            // Character level income from direct referrals
+            if (userLevel.characterLevel.current && directReferrals.length > 0) {
+                const totalDirectReferralBalance = directReferrals.reduce((sum, user) => sum + user.normalWallet.balance, 0);
+                const percentage = userLevel.characterLevel.percentages[userLevel.characterLevel.current];
+                characterLevelIncome = (totalDirectReferralBalance * percentage) / 100;
+            }
+            
+            // Digit level income from own wallet
+            if (userLevel.digitLevel.current) {
+                const userBalance = req.user.normalWallet.balance;
+                const percentage = userLevel.digitLevel.percentages[userLevel.digitLevel.current];
+                digitLevelIncome = (userBalance * percentage) / 100;
+            }
+        }
+
+        const dailyTeamIncome = characterLevelIncome + digitLevelIncome;
+        
+        if (dailyTeamIncome <= 0) {
+            return res.status(400).json({
+                success: false,
+                message: 'No team income available to claim.',
+                data: {
+                    dailyTeamIncome: 0,
+                    characterLevelIncome: 0,
+                    digitLevelIncome: 0
+                }
+            });
+        }
+        
+        // Credit team income to normal wallet
+        const user = await User.findById(userId);
+        user.normalWallet.balance += dailyTeamIncome;
+        user.normalWallet.transactions.push({
+            type: 'team_income',
+            amount: dailyTeamIncome,
+            description: `Team income credit (Character: ${characterLevelIncome}, Digit: ${digitLevelIncome})`,
+            status: 'approved'
+        });
+        
+        // Update level tracking
+        if (!userLevel) {
+            // Create new level record if doesn't exist
+            const newLevel = new Level({
+                userId: userId,
+                dailyIncome: {
+                    characterLevel: characterLevelIncome,
+                    digitLevel: digitLevelIncome,
+                    lastClaimed: new Date()
+                }
+            });
+            await newLevel.save();
+        } else {
+            // Update existing level record
+            userLevel.dailyIncome.characterLevel = characterLevelIncome;
+            userLevel.dailyIncome.digitLevel = digitLevelIncome;
+            userLevel.dailyIncome.lastClaimed = new Date();
+            
+            // Update total earned
+            if (userLevel.characterLevel) {
+                userLevel.characterLevel.totalEarned += characterLevelIncome;
+            }
+            if (userLevel.digitLevel) {
+                userLevel.digitLevel.totalEarned += digitLevelIncome;
+            }
+            
+            await userLevel.save();
+        }
+        
+        await user.save();
+        
+        res.json({
+            success: true,
+            message: 'Team income claimed successfully',
+            data: {
+                dailyTeamIncome: dailyTeamIncome,
+                characterLevelIncome: characterLevelIncome,
+                digitLevelIncome: digitLevelIncome,
+                normalWalletBalance: user.normalWallet.balance,
+                characterLevel: userLevel?.characterLevel?.current || null,
+                digitLevel: userLevel?.digitLevel?.current || null,
+                lastClaimed: new Date()
+            }
+        });
+    } catch (error) {
+        console.error('Error claiming team income:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Error claiming team income',
             error: error.message
         });
     }
