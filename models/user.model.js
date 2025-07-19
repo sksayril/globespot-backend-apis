@@ -159,6 +159,63 @@ const userSchema = new mongoose.Schema({
         zipCode: String
     },
     
+    // Wallet Information
+    walletInfo: {
+        address: {
+            type: String,
+            default: null
+        },
+        qrCode: {
+            type: String,
+            default: null
+        },
+        isVerified: {
+            type: Boolean,
+            default: false
+        },
+        lastUpdated: {
+            type: Date,
+            default: null
+        }
+    },
+    
+    // Wallet Change Requests
+    walletChangeRequests: [{
+        requestId: {
+            type: String,
+            required: true
+        },
+        oldAddress: String,
+        newAddress: {
+            type: String,
+            required: true
+        },
+        oldQrCode: String,
+        newQrCode: {
+            type: String,
+            required: true
+        },
+        reason: String,
+        status: {
+            type: String,
+            enum: ['pending', 'approved', 'rejected'],
+            default: 'pending'
+        },
+        adminNotes: String,
+        requestedAt: {
+            type: Date,
+            default: Date.now
+        },
+        processedAt: {
+            type: Date,
+            default: null
+        },
+        processedBy: {
+            type: mongoose.Schema.Types.ObjectId,
+            ref: 'User'
+        }
+    }],
+    
     // Timestamps
     createdAt: {
         type: Date,

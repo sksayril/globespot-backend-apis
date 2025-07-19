@@ -10,9 +10,6 @@ const logger = require('morgan');
 
 const app = express();
 
-// Import cron service
-const cronService = require('./services/cronService');
-
 var indexRouter = require('./routes/index');
 var usersRouter = require('./routes/users');
 var adminRouter = require('./routes/admin');
@@ -93,8 +90,5 @@ app.use((req, res) => {
         message: 'Route not found.'
     });
 });
-
-// Initialize cron jobs when app is loaded
-cronService.init();
 
 module.exports = app;

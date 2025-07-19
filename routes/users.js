@@ -2823,4 +2823,298 @@ router.get('/level-progress', auth, async (req, res) => {
     }
 });
 
+// Set wallet address and QR code (first time setup)
+router.post('/set-wallet-info', auth, upload.single('qrCode'), async (req, res) => {
+    try {
+        const { walletAddress } = req.body;
+        const userId = req.user.id;
+
+        // Validate input
+        if (!walletAddress) {
+            return res.status(400).json({
+                success: false,
+                message: 'Wallet address is required'
+            });
+        }
+
+        if (!req.file) {
+            return res.status(400).json({
+                success: false,
+                message: 'QR code image is required'
+            });
+        }
+
+        // Get user
+        const user = await User.findById(userId);
+        if (!user) {
+            return res.status(404).json({
+                success: false,
+                message: 'User not found'
+            });
+        }
+
+        // Check if wallet info already exists
+        if (user.walletInfo.address) {
+            return res.status(400).json({
+                success: false,
+                message: 'Wallet information already set. Use change request to update.'
+            });
+        }
+
+        // For first time setup, automatically approve and verify
+        user.walletInfo = {
+            address: walletAddress,
+            qrCode: req.file.path,
+            isVerified: true, // Automatically verified for first time setup
+            lastUpdated: new Date()
+        };
+
+        await user.save();
+
+        res.json({
+            success: true,
+            message: 'Wallet information set successfully and automatically verified',
+            data: {
+                walletAddress: user.walletInfo.address,
+                qrCode: user.walletInfo.qrCode,
+                isVerified: user.walletInfo.isVerified,
+                lastUpdated: user.walletInfo.lastUpdated
+            }
+        });
+
+    } catch (error) {
+        console.error('Error setting wallet info:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Error setting wallet information',
+            error: error.message
+        });
+    }
+});
+
+// Get wallet information
+router.get('/wallet-info', auth, async (req, res) => {
+    try {
+        const userId = req.user.id;
+
+        const user = await User.findById(userId);
+        if (!user) {
+            return res.status(404).json({
+                success: false,
+                message: 'User not found'
+            });
+        }
+
+        res.json({
+            success: true,
+            data: {
+                walletInfo: user.walletInfo,
+                pendingRequests: user.walletChangeRequests.filter(req => req.status === 'pending'),
+                totalRequests: user.walletChangeRequests.length
+            }
+        });
+
+    } catch (error) {
+        console.error('Error getting wallet info:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Error getting wallet information',
+            error: error.message
+        });
+    }
+});
+
+// Request wallet information change
+router.post('/request-wallet-change', auth, upload.single('newQrCode'), async (req, res) => {
+    try {
+        const { newWalletAddress, reason } = req.body;
+        const userId = req.user.id;
+
+        // Validate input
+        if (!newWalletAddress) {
+            return res.status(400).json({
+                success: false,
+                message: 'New wallet address is required'
+            });
+        }
+
+        if (!req.file) {
+            return res.status(400).json({
+                success: false,
+                message: 'New QR code image is required'
+            });
+        }
+
+        // Get user
+        const user = await User.findById(userId);
+        if (!user) {
+            return res.status(404).json({
+                success: false,
+                message: 'User not found'
+            });
+        }
+
+        // Check if wallet info exists
+        if (!user.walletInfo.address) {
+            return res.status(400).json({
+                success: false,
+                message: 'No wallet information found. Use set-wallet-info first.'
+            });
+        }
+
+        // Check if there's already a pending request
+        const pendingRequest = user.walletChangeRequests.find(req => req.status === 'pending');
+        if (pendingRequest) {
+            return res.status(400).json({
+                success: false,
+                message: 'You already have a pending wallet change request',
+                data: {
+                    requestId: pendingRequest.requestId,
+                    requestedAt: pendingRequest.requestedAt
+                }
+            });
+        }
+
+        // Create change request
+        const requestId = `WCR_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+        const changeRequest = {
+            requestId: requestId,
+            oldAddress: user.walletInfo.address,
+            newAddress: newWalletAddress,
+            oldQrCode: user.walletInfo.qrCode,
+            newQrCode: req.file.path,
+            reason: reason || 'User requested wallet change',
+            status: 'pending',
+            requestedAt: new Date()
+        };
+
+        user.walletChangeRequests.push(changeRequest);
+        await user.save();
+
+        res.json({
+            success: true,
+            message: 'Wallet change request submitted successfully',
+            data: {
+                requestId: requestId,
+                oldAddress: changeRequest.oldAddress,
+                newAddress: changeRequest.newAddress,
+                reason: changeRequest.reason,
+                status: 'pending',
+                requestedAt: changeRequest.requestedAt
+            }
+        });
+
+    } catch (error) {
+        console.error('Error requesting wallet change:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Error requesting wallet change',
+            error: error.message
+        });
+    }
+});
+
+// Get wallet change request status
+router.get('/wallet-change-status/:requestId', auth, async (req, res) => {
+    try {
+        const { requestId } = req.params;
+        const userId = req.user.id;
+
+        const user = await User.findById(userId);
+        if (!user) {
+            return res.status(404).json({
+                success: false,
+                message: 'User not found'
+            });
+        }
+
+        const request = user.walletChangeRequests.find(req => req.requestId === requestId);
+        if (!request) {
+            return res.status(404).json({
+                success: false,
+                message: 'Change request not found'
+            });
+        }
+
+        res.json({
+            success: true,
+            data: {
+                requestId: request.requestId,
+                oldAddress: request.oldAddress,
+                newAddress: request.newAddress,
+                reason: request.reason,
+                status: request.status,
+                adminNotes: request.adminNotes,
+                requestedAt: request.requestedAt,
+                processedAt: request.processedAt
+            }
+        });
+
+    } catch (error) {
+        console.error('Error getting wallet change status:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Error getting wallet change status',
+            error: error.message
+        });
+    }
+});
+
+// Get all wallet change requests for user
+router.get('/wallet-change-requests', auth, async (req, res) => {
+    try {
+        const userId = req.user.id;
+        const { page = 1, limit = 10, status } = req.query;
+
+        const user = await User.findById(userId);
+        if (!user) {
+            return res.status(404).json({
+                success: false,
+                message: 'User not found'
+            });
+        }
+
+        let requests = user.walletChangeRequests;
+
+        // Filter by status if provided
+        if (status) {
+            requests = requests.filter(req => req.status === status);
+        }
+
+        // Sort by requestedAt (newest first)
+        requests.sort((a, b) => new Date(b.requestedAt) - new Date(a.requestedAt));
+
+        // Paginate
+        const skip = (page - 1) * limit;
+        const paginatedRequests = requests.slice(skip, skip + parseInt(limit));
+
+        res.json({
+            success: true,
+            data: {
+                requests: paginatedRequests,
+                pagination: {
+                    page: parseInt(page),
+                    limit: parseInt(limit),
+                    total: requests.length,
+                    pages: Math.ceil(requests.length / limit)
+                },
+                summary: {
+                    total: user.walletChangeRequests.length,
+                    pending: user.walletChangeRequests.filter(req => req.status === 'pending').length,
+                    approved: user.walletChangeRequests.filter(req => req.status === 'approved').length,
+                    rejected: user.walletChangeRequests.filter(req => req.status === 'rejected').length
+                }
+            }
+        });
+
+    } catch (error) {
+        console.error('Error getting wallet change requests:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Error getting wallet change requests',
+            error: error.message
+        });
+    }
+});
+
 module.exports = router;

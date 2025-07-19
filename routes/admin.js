@@ -762,4 +762,412 @@ router.post('/fix-level-data', adminAuth, async (req, res) => {
     }
 });
 
+// Get all wallet change requests (Admin only)
+router.get('/wallet-change-requests', adminAuth, async (req, res) => {
+    try {
+        const { page = 1, limit = 20, status, userId } = req.query;
+        const skip = (page - 1) * limit;
+
+        // Build query
+        let query = {};
+        if (status) {
+            query['walletChangeRequests.status'] = status;
+        }
+        if (userId) {
+            query._id = userId;
+        }
+
+        // Get users with wallet change requests
+        const users = await User.find(query)
+            .select('name email phone walletChangeRequests')
+            .populate('walletChangeRequests.processedBy', 'name email')
+            .skip(skip)
+            .limit(parseInt(limit));
+
+        // Extract and flatten all requests
+        let allRequests = [];
+        users.forEach(user => {
+            user.walletChangeRequests.forEach(request => {
+                allRequests.push({
+                    ...request.toObject(),
+                    user: {
+                        id: user._id,
+                        name: user.name,
+                        email: user.email,
+                        phone: user.phone
+                    }
+                });
+            });
+        });
+
+        // Filter by status if provided
+        if (status) {
+            allRequests = allRequests.filter(req => req.status === status);
+        }
+
+        // Sort by requestedAt (newest first)
+        allRequests.sort((a, b) => new Date(b.requestedAt) - new Date(a.requestedAt));
+
+        // Get total count
+        const totalUsers = await User.countDocuments(query);
+        const totalRequests = await User.aggregate([
+            { $match: query },
+            { $unwind: '$walletChangeRequests' },
+            { $count: 'total' }
+        ]);
+
+        const total = totalRequests.length > 0 ? totalRequests[0].total : 0;
+
+        res.json({
+            success: true,
+            data: {
+                requests: allRequests,
+                pagination: {
+                    page: parseInt(page),
+                    limit: parseInt(limit),
+                    total: total,
+                    pages: Math.ceil(total / limit)
+                },
+                summary: {
+                    total: total,
+                    pending: allRequests.filter(req => req.status === 'pending').length,
+                    approved: allRequests.filter(req => req.status === 'approved').length,
+                    rejected: allRequests.filter(req => req.status === 'rejected').length
+                }
+            }
+        });
+
+    } catch (error) {
+        console.error('Error getting wallet change requests:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Error getting wallet change requests',
+            error: error.message
+        });
+    }
+});
+
+// Get pending wallet change requests (Admin only)
+router.get('/pending-wallet-changes', adminAuth, async (req, res) => {
+    try {
+        const { page = 1, limit = 20 } = req.query;
+        const skip = (page - 1) * limit;
+
+        // Get users with pending wallet change requests
+        const users = await User.find({ 'walletChangeRequests.status': 'pending' })
+            .select('name email phone walletChangeRequests')
+            .skip(skip)
+            .limit(parseInt(limit));
+
+        // Extract pending requests
+        let pendingRequests = [];
+        users.forEach(user => {
+            const pending = user.walletChangeRequests.filter(req => req.status === 'pending');
+            pending.forEach(request => {
+                pendingRequests.push({
+                    ...request.toObject(),
+                    user: {
+                        id: user._id,
+                        name: user.name,
+                        email: user.email,
+                        phone: user.phone
+                    }
+                });
+            });
+        });
+
+        // Sort by requestedAt (oldest first for pending)
+        pendingRequests.sort((a, b) => new Date(a.requestedAt) - new Date(b.requestedAt));
+
+        // Get total pending count
+        const totalPending = await User.aggregate([
+            { $unwind: '$walletChangeRequests' },
+            { $match: { 'walletChangeRequests.status': 'pending' } },
+            { $count: 'total' }
+        ]);
+
+        const total = totalPending.length > 0 ? totalPending[0].total : 0;
+
+        res.json({
+            success: true,
+            data: {
+                requests: pendingRequests,
+                pagination: {
+                    page: parseInt(page),
+                    limit: parseInt(limit),
+                    total: total,
+                    pages: Math.ceil(total / limit)
+                },
+                summary: {
+                    totalPending: total
+                }
+            }
+        });
+
+    } catch (error) {
+        console.error('Error getting pending wallet changes:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Error getting pending wallet changes',
+            error: error.message
+        });
+    }
+});
+
+// Process wallet change request (Admin only)
+router.post('/process-wallet-change/:requestId', adminAuth, async (req, res) => {
+    try {
+        const { requestId } = req.params;
+        const { action, adminNotes } = req.body; // action: 'approve' or 'reject'
+        const adminId = req.user.id;
+
+        // Validate action
+        if (!['approve', 'reject'].includes(action)) {
+            return res.status(400).json({
+                success: false,
+                message: 'Action must be either "approve" or "reject"'
+            });
+        }
+
+        // Find user with this request
+        const user = await User.findOne({ 'walletChangeRequests.requestId': requestId });
+        if (!user) {
+            return res.status(404).json({
+                success: false,
+                message: 'Wallet change request not found'
+            });
+        }
+
+        // Find the specific request
+        const request = user.walletChangeRequests.find(req => req.requestId === requestId);
+        if (!request) {
+            return res.status(404).json({
+                success: false,
+                message: 'Wallet change request not found'
+            });
+        }
+
+        // Check if already processed
+        if (request.status !== 'pending') {
+            return res.status(400).json({
+                success: false,
+                message: 'Request has already been processed',
+                data: {
+                    currentStatus: request.status,
+                    processedAt: request.processedAt
+                }
+            });
+        }
+
+        // Update request status
+        request.status = action === 'approve' ? 'approved' : 'rejected';
+        request.adminNotes = adminNotes || '';
+        request.processedAt = new Date();
+        request.processedBy = adminId;
+
+        // If approved, update user's wallet info
+        if (action === 'approve') {
+            user.walletInfo = {
+                address: request.newAddress,
+                qrCode: request.newQrCode,
+                isVerified: true,
+                lastUpdated: new Date()
+            };
+        }
+
+        await user.save();
+
+        res.json({
+            success: true,
+            message: `Wallet change request ${action}d successfully`,
+            data: {
+                requestId: request.requestId,
+                action: action,
+                status: request.status,
+                adminNotes: request.adminNotes,
+                processedAt: request.processedAt,
+                user: {
+                    id: user._id,
+                    name: user.name,
+                    email: user.email
+                },
+                walletInfo: action === 'approve' ? user.walletInfo : null
+            }
+        });
+
+    } catch (error) {
+        console.error('Error processing wallet change:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Error processing wallet change request',
+            error: error.message
+        });
+    }
+});
+
+// Get wallet change request details (Admin only)
+router.get('/wallet-change-details/:requestId', adminAuth, async (req, res) => {
+    try {
+        const { requestId } = req.params;
+
+        // Find user with this request
+        const user = await User.findOne({ 'walletChangeRequests.requestId': requestId })
+            .populate('walletChangeRequests.processedBy', 'name email');
+
+        if (!user) {
+            return res.status(404).json({
+                success: false,
+                message: 'Wallet change request not found'
+            });
+        }
+
+        // Find the specific request
+        const request = user.walletChangeRequests.find(req => req.requestId === requestId);
+        if (!request) {
+            return res.status(404).json({
+                success: false,
+                message: 'Wallet change request not found'
+            });
+        }
+
+        res.json({
+            success: true,
+            data: {
+                request: {
+                    ...request.toObject(),
+                    user: {
+                        id: user._id,
+                        name: user.name,
+                        email: user.email,
+                        phone: user.phone
+                    }
+                },
+                currentWalletInfo: user.walletInfo
+            }
+        });
+
+    } catch (error) {
+        console.error('Error getting wallet change details:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Error getting wallet change details',
+            error: error.message
+        });
+    }
+});
+
+// Bulk process wallet change requests (Admin only)
+router.post('/bulk-process-wallet-changes', adminAuth, async (req, res) => {
+    try {
+        const { requests } = req.body; // Array of { requestId, action, adminNotes }
+        const adminId = req.user.id;
+
+        if (!Array.isArray(requests) || requests.length === 0) {
+            return res.status(400).json({
+                success: false,
+                message: 'Requests array is required and must not be empty'
+            });
+        }
+
+        const results = {
+            processed: 0,
+            errors: 0,
+            details: []
+        };
+
+        for (const requestData of requests) {
+            try {
+                const { requestId, action, adminNotes } = requestData;
+
+                // Validate action
+                if (!['approve', 'reject'].includes(action)) {
+                    results.errors++;
+                    results.details.push({
+                        requestId,
+                        error: 'Invalid action'
+                    });
+                    continue;
+                }
+
+                // Find user with this request
+                const user = await User.findOne({ 'walletChangeRequests.requestId': requestId });
+                if (!user) {
+                    results.errors++;
+                    results.details.push({
+                        requestId,
+                        error: 'Request not found'
+                    });
+                    continue;
+                }
+
+                // Find the specific request
+                const request = user.walletChangeRequests.find(req => req.requestId === requestId);
+                if (!request) {
+                    results.errors++;
+                    results.details.push({
+                        requestId,
+                        error: 'Request not found'
+                    });
+                    continue;
+                }
+
+                // Check if already processed
+                if (request.status !== 'pending') {
+                    results.errors++;
+                    results.details.push({
+                        requestId,
+                        error: 'Request already processed'
+                    });
+                    continue;
+                }
+
+                // Update request status
+                request.status = action === 'approve' ? 'approved' : 'rejected';
+                request.adminNotes = adminNotes || '';
+                request.processedAt = new Date();
+                request.processedBy = adminId;
+
+                // If approved, update user's wallet info
+                if (action === 'approve') {
+                    user.walletInfo = {
+                        address: request.newAddress,
+                        qrCode: request.newQrCode,
+                        isVerified: true,
+                        lastUpdated: new Date()
+                    };
+                }
+
+                await user.save();
+                results.processed++;
+                results.details.push({
+                    requestId,
+                    status: 'success',
+                    action: action
+                });
+
+            } catch (error) {
+                results.errors++;
+                results.details.push({
+                    requestId: requestData.requestId,
+                    error: error.message
+                });
+            }
+        }
+
+        res.json({
+            success: true,
+            message: 'Bulk processing completed',
+            data: results
+        });
+
+    } catch (error) {
+        console.error('Error bulk processing wallet changes:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Error bulk processing wallet changes',
+            error: error.message
+        });
+    }
+});
+
 module.exports = router; 

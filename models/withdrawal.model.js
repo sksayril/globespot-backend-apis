@@ -19,6 +19,16 @@ const withdrawalRequestSchema = new mongoose.Schema({
         required: true,
         trim: true
     },
+    withdrawalWalletText: {
+        type: String,
+        required: true,
+        trim: true
+    },
+    withdrawalWalletImage: {
+        type: String,
+        required: true,
+        trim: true
+    },
     amount: {
         type: Number,
         required: true,

@@ -7,14 +7,28 @@ const WithdrawalRequest = require('../models/withdrawal.model');
 // User: Request withdrawal from normal wallet
 router.post('/request', auth, async (req, res) => {
     try {
-        const { amount, walletAddress } = req.body;
+        const { amount, withdrawalWalletText, withdrawalWalletImage } = req.body;
         const userId = req.user.id;
 
         // Validate input
-        if (!amount || !walletAddress) {
+        if (!amount) {
             return res.status(400).json({
                 success: false,
-                message: 'Amount and wallet address are required'
+                message: 'Amount is required'
+            });
+        }
+
+        if (!withdrawalWalletText) {
+            return res.status(400).json({
+                success: false,
+                message: 'Withdrawal wallet text is required'
+            });
+        }
+
+        if (!withdrawalWalletImage) {
+            return res.status(400).json({
+                success: false,
+                message: 'Withdrawal wallet image URL is required'
             });
         }
 
@@ -51,12 +65,30 @@ router.post('/request', auth, async (req, res) => {
             });
         }
 
+        // Check if user has wallet information set
+        if (!user.walletInfo || !user.walletInfo.address) {
+            return res.status(400).json({
+                success: false,
+                message: 'Wallet information not set. Please set your wallet address and QR code first.'
+            });
+        }
+
+        // Check if wallet is verified
+        if (!user.walletInfo.isVerified) {
+            return res.status(400).json({
+                success: false,
+                message: 'Wallet information not verified. Please contact admin for verification. Note: First-time wallet setup should be automatically verified.'
+            });
+        }
+
         // Create withdrawal request
         const withdrawalRequest = new WithdrawalRequest({
             userId: userId,
             userEmail: user.email,
             userName: user.name,
-            walletAddress: walletAddress,
+            walletAddress: user.walletInfo.address,
+            withdrawalWalletText: withdrawalWalletText,
+            withdrawalWalletImage: withdrawalWalletImage,
             amount: amount,
             walletType: 'normal',
             status: 'pending'
@@ -68,7 +100,7 @@ router.post('/request', auth, async (req, res) => {
         user.normalWallet.transactions.push({
             type: 'withdrawal',
             amount: -amount,
-            description: `Withdrawal request - ${walletAddress}`,
+            description: `Withdrawal request - ${user.walletInfo.address}`,
             status: 'pending'
         });
 
@@ -82,7 +114,9 @@ router.post('/request', auth, async (req, res) => {
             data: {
                 requestId: withdrawalRequest._id,
                 amount: amount,
-                walletAddress: walletAddress,
+                walletAddress: user.walletInfo.address,
+                withdrawalWalletText: withdrawalWalletText,
+                withdrawalWalletImage: withdrawalWalletImage,
                 status: 'pending',
                 createdAt: withdrawalRequest.createdAt
             }
@@ -133,6 +167,40 @@ router.get('/my-requests', auth, async (req, res) => {
 
     } catch (error) {
         console.error('Get withdrawal requests error:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Internal server error'
+        });
+    }
+});
+
+// User: Get specific withdrawal request details
+router.get('/my-request/:requestId', auth, async (req, res) => {
+    try {
+        const { requestId } = req.params;
+        const userId = req.user.id;
+
+        const withdrawalRequest = await WithdrawalRequest.findOne({
+            _id: requestId,
+            userId: userId
+        });
+
+        if (!withdrawalRequest) {
+            return res.status(404).json({
+                success: false,
+                message: 'Withdrawal request not found'
+            });
+        }
+
+        res.json({
+            success: true,
+            data: {
+                withdrawalRequest: withdrawalRequest
+            }
+        });
+
+    } catch (error) {
+        console.error('Get withdrawal request details error:', error);
         res.status(500).json({
             success: false,
             message: 'Internal server error'
@@ -399,6 +467,52 @@ router.get('/statistics', auth, async (req, res) => {
 
     } catch (error) {
         console.error('Get withdrawal statistics error:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Internal server error'
+        });
+    }
+});
+
+// Admin: Get withdrawal request details by ID
+router.get('/request/:requestId', auth, async (req, res) => {
+    try {
+        // Check if user is admin
+        if (req.user.role !== 'admin') {
+            return res.status(403).json({
+                success: false,
+                message: 'Access denied. Admin only.'
+            });
+        }
+
+        const { requestId } = req.params;
+
+        const withdrawalRequest = await WithdrawalRequest.findById(requestId)
+            .populate('userId', 'name email phone profileImage');
+
+        if (!withdrawalRequest) {
+            return res.status(404).json({
+                success: false,
+                message: 'Withdrawal request not found'
+            });
+        }
+
+        res.json({
+            success: true,
+            data: {
+                withdrawalRequest: withdrawalRequest,
+                userInfo: {
+                    id: withdrawalRequest.userId._id,
+                    name: withdrawalRequest.userId.name,
+                    email: withdrawalRequest.userId.email,
+                    phone: withdrawalRequest.userId.phone,
+                    profileImage: withdrawalRequest.userId.profileImage
+                }
+            }
+        });
+
+    } catch (error) {
+        console.error('Get withdrawal request details error:', error);
         res.status(500).json({
             success: false,
             message: 'Internal server error'
