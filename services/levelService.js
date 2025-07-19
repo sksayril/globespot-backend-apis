@@ -15,11 +15,11 @@ class LevelService {
             const newLevel = new Level({
                 userId,
                 characterLevel: {
-                    current: null,
+                    current: undefined,
                     totalEarned: 0
                 },
                 digitLevel: {
-                    current: null,
+                    current: undefined,
                     totalEarned: 0,
                     directMembers: []
                 },
@@ -63,7 +63,8 @@ class LevelService {
             
             // Update character level if changed
             if (level.characterLevel.current !== newCharacterLevel) {
-                level.characterLevel.current = newCharacterLevel;
+                // Handle null case by setting to undefined instead of null
+                level.characterLevel.current = newCharacterLevel || undefined;
                 level.characterLevel.lastCalculated = new Date();
                 await level.save();
             }
@@ -129,7 +130,8 @@ class LevelService {
             
             // Update digit level if changed
             if (level.digitLevel.current !== newDigitLevel) {
-                level.digitLevel.current = newDigitLevel;
+                // Handle null case by setting to undefined instead of null
+                level.digitLevel.current = newDigitLevel || undefined;
                 level.digitLevel.lastCalculated = new Date();
                 await level.save();
             }

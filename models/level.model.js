@@ -13,7 +13,8 @@ const levelSchema = new mongoose.Schema({
         current: {
             type: String,
             enum: ['A', 'B', 'C', 'D', 'E'],
-            default: null
+            default: null,
+            required: false
         },
         percentages: {
             A: { type: Number, default: 10.0 },    // 10%
@@ -37,7 +38,8 @@ const levelSchema = new mongoose.Schema({
         current: {
             type: String,
             enum: ['Lvl1', 'Lvl2', 'Lvl3', 'Lvl4', 'Lvl5'],
-            default: null
+            default: null,
+            required: false
         },
         criteria: {
             Lvl1: {
