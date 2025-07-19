@@ -15,11 +15,11 @@ class LevelService {
             const newLevel = new Level({
                 userId,
                 characterLevel: {
-                    current: undefined,
+                    current: null,
                     totalEarned: 0
                 },
                 digitLevel: {
-                    current: undefined,
+                    current: null,
                     totalEarned: 0,
                     directMembers: []
                 },
@@ -63,8 +63,14 @@ class LevelService {
             
             // Update character level if changed
             if (level.characterLevel.current !== newCharacterLevel) {
-                // Handle null case by setting to undefined instead of null
-                level.characterLevel.current = newCharacterLevel || undefined;
+                // Validate character level value
+                const validCharacterLevels = ['A', 'B', 'C', 'D', 'E'];
+                if (newCharacterLevel && !validCharacterLevels.includes(newCharacterLevel)) {
+                    console.warn(`Invalid character level: ${newCharacterLevel}`);
+                    level.characterLevel.current = null;
+                } else {
+                    level.characterLevel.current = newCharacterLevel;
+                }
                 level.characterLevel.lastCalculated = new Date();
                 await level.save();
             }
@@ -130,8 +136,14 @@ class LevelService {
             
             // Update digit level if changed
             if (level.digitLevel.current !== newDigitLevel) {
-                // Handle null case by setting to undefined instead of null
-                level.digitLevel.current = newDigitLevel || undefined;
+                // Validate digit level value
+                const validDigitLevels = ['Lvl1', 'Lvl2', 'Lvl3', 'Lvl4', 'Lvl5'];
+                if (newDigitLevel && !validDigitLevels.includes(newDigitLevel)) {
+                    console.warn(`Invalid digit level: ${newDigitLevel}`);
+                    level.digitLevel.current = null;
+                } else {
+                    level.digitLevel.current = newDigitLevel;
+                }
                 level.digitLevel.lastCalculated = new Date();
                 await level.save();
             }

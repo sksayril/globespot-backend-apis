@@ -12,7 +12,6 @@ const levelSchema = new mongoose.Schema({
     characterLevel: {
         current: {
             type: String,
-            enum: ['A', 'B', 'C', 'D', 'E'],
             default: null,
             required: false
         },
@@ -37,7 +36,6 @@ const levelSchema = new mongoose.Schema({
     digitLevel: {
         current: {
             type: String,
-            enum: ['Lvl1', 'Lvl2', 'Lvl3', 'Lvl4', 'Lvl5'],
             default: null,
             required: false
         },

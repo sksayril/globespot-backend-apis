@@ -694,4 +694,72 @@ router.get('/cron-status', adminAuth, async (req, res) => {
     }
 });
 
+// Fix level data (Admin only)
+router.post('/fix-level-data', adminAuth, async (req, res) => {
+    try {
+        // Check if user is admin
+        if (req.user.role !== 'admin') {
+            return res.status(403).json({
+                success: false,
+                message: 'Access denied. Admin only.'
+            });
+        }
+
+        const Level = require('../models/level.model');
+        
+        // Find all level records
+        const levels = await Level.find({});
+        console.log(`Found ${levels.length} level records`);
+
+        let fixedCount = 0;
+        let errorCount = 0;
+
+        for (const level of levels) {
+            try {
+                let needsUpdate = false;
+
+                // Fix character level if invalid
+                if (level.characterLevel.current && 
+                    !['A', 'B', 'C', 'D', 'E'].includes(level.characterLevel.current)) {
+                    console.log(`Fixing invalid character level: ${level.characterLevel.current} -> null`);
+                    level.characterLevel.current = null;
+                    needsUpdate = true;
+                }
+
+                // Fix digit level if invalid
+                if (level.digitLevel.current && 
+                    !['Lvl1', 'Lvl2', 'Lvl3', 'Lvl4', 'Lvl5'].includes(level.digitLevel.current)) {
+                    console.log(`Fixing invalid digit level: ${level.digitLevel.current} -> null`);
+                    level.digitLevel.current = null;
+                    needsUpdate = true;
+                }
+
+                if (needsUpdate) {
+                    await level.save();
+                    fixedCount++;
+                }
+            } catch (error) {
+                console.error(`Error fixing level ${level._id}:`, error.message);
+                errorCount++;
+            }
+        }
+
+        res.json({
+            success: true,
+            message: 'Level data fixed successfully',
+            data: {
+                totalRecords: levels.length,
+                fixed: fixedCount,
+                errors: errorCount
+            }
+        });
+    } catch (error) {
+        res.status(500).json({
+            success: false,
+            message: 'Error fixing level data',
+            error: error.message
+        });
+    }
+});
+
 module.exports = router; 
