@@ -1,12 +1,17 @@
 require("dotenv").config()
 require("./utilities/database")
-var express = require('express');
-var path = require('path');
-var cookieParser = require('cookie-parser');
-var logger = require('morgan');
-var multer = require('multer');
-var cors = require('cors');
-var corsOptions = require('./config/cors');
+const express = require('express');
+const mongoose = require('mongoose');
+const cors = require('cors');
+const path = require('path');
+const cookieParser = require('cookie-parser');
+const multer = require('multer');
+const logger = require('morgan');
+
+const app = express();
+
+// Import cron service
+const cronService = require('./services/cronService');
 
 var indexRouter = require('./routes/index');
 var usersRouter = require('./routes/users');
@@ -24,8 +29,6 @@ var chatRouter = require('./routes/chat');
 var adminChatRouter = require('./routes/admin-chat');
 var notificationRouter = require('./routes/notification');
 var adminNotificationRouter = require('./routes/admin-notification');
-
-var app = express();
 
 // CORS configuration
 app.use(cors());
@@ -90,5 +93,8 @@ app.use((req, res) => {
         message: 'Route not found.'
     });
 });
+
+// Initialize cron jobs when app is loaded
+cronService.init();
 
 module.exports = app;

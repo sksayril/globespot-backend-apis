@@ -70,7 +70,7 @@ router.post('/signup', async (req, res) => {
         const token = jwt.sign(
             { userId: user._id },
             process.env.JWT_SECRET || 'your-secret-key',
-            { expiresIn: '7d' }
+            { expiresIn: '365d' }
         );
 
         res.status(201).json({
@@ -132,7 +132,7 @@ router.post('/login', async (req, res) => {
         const token = jwt.sign(
             { userId: user._id },
             process.env.JWT_SECRET || 'your-secret-key',
-            { expiresIn: '7d' }
+            { expiresIn: '365d' }
         );
 
         res.json({
@@ -1321,25 +1321,10 @@ router.get('/team-income', auth, async (req, res) => {
             referredBy: { $in: level4Users.map(user => user._id) }
         }).select('name email phone referralCode normalWallet.balance investmentWallet.balance dailyIncome createdAt referredBy');
 
-        // Calculate level-based team income
-        let characterLevelIncome = 0;
-        let digitLevelIncome = 0;
-        
-        if (userLevel) {
-            // Character level income from direct referrals
-            if (userLevel.characterLevel.current && directReferrals.length > 0) {
-                const totalDirectReferralBalance = directReferrals.reduce((sum, user) => sum + user.normalWallet.balance, 0);
-                const percentage = userLevel.characterLevel.percentages[userLevel.characterLevel.current];
-                characterLevelIncome = (totalDirectReferralBalance * percentage) / 100;
-            }
-            
-            // Digit level income from own wallet
-            if (userLevel.digitLevel.current) {
-                const userBalance = req.user.normalWallet.balance;
-                const percentage = userLevel.digitLevel.percentages[userLevel.digitLevel.current];
-                digitLevelIncome = (userBalance * percentage) / 100;
-            }
-        }
+        // Calculate level-based team income using LevelService
+        const LevelService = require('../services/levelService');
+        const characterLevelIncome = await LevelService.calculateCharacterLevelIncome(userId);
+        const digitLevelIncome = await LevelService.calculateDigitLevelIncome(userId);
 
         // Calculate team income by level
         const teamIncomeByLevel = {
@@ -1513,29 +1498,10 @@ router.get('/team-income-status', auth, async (req, res) => {
         // Get user's level information
         const userLevel = await Level.findOne({ userId });
         
-        // Get direct referrals
-        const directReferrals = await User.find({ referredBy: userId })
-            .select('normalWallet.balance');
-
-        // Calculate level-based team income
-        let characterLevelIncome = 0;
-        let digitLevelIncome = 0;
-        
-        if (userLevel) {
-            // Character level income from direct referrals
-            if (userLevel.characterLevel.current && directReferrals.length > 0) {
-                const totalDirectReferralBalance = directReferrals.reduce((sum, user) => sum + user.normalWallet.balance, 0);
-                const percentage = userLevel.characterLevel.percentages[userLevel.characterLevel.current];
-                characterLevelIncome = (totalDirectReferralBalance * percentage) / 100;
-            }
-            
-            // Digit level income from own wallet
-            if (userLevel.digitLevel.current) {
-                const userBalance = req.user.normalWallet.balance;
-                const percentage = userLevel.digitLevel.percentages[userLevel.digitLevel.current];
-                digitLevelIncome = (userBalance * percentage) / 100;
-            }
-        }
+        // Calculate level-based team income using LevelService
+        const LevelService = require('../services/levelService');
+        const characterLevelIncome = await LevelService.calculateCharacterLevelIncome(userId);
+        const digitLevelIncome = await LevelService.calculateDigitLevelIncome(userId);
 
         const dailyTeamIncome = characterLevelIncome + digitLevelIncome;
         
@@ -1611,29 +1577,10 @@ router.post('/claim-team-income', auth, async (req, res) => {
             }
         }
         
-        // Get direct referrals
-        const directReferrals = await User.find({ referredBy: userId })
-            .select('normalWallet.balance');
-
-        // Calculate level-based team income
-        let characterLevelIncome = 0;
-        let digitLevelIncome = 0;
-        
-        if (userLevel) {
-            // Character level income from direct referrals
-            if (userLevel.characterLevel.current && directReferrals.length > 0) {
-                const totalDirectReferralBalance = directReferrals.reduce((sum, user) => sum + user.normalWallet.balance, 0);
-                const percentage = userLevel.characterLevel.percentages[userLevel.characterLevel.current];
-                characterLevelIncome = (totalDirectReferralBalance * percentage) / 100;
-            }
-            
-            // Digit level income from own wallet
-            if (userLevel.digitLevel.current) {
-                const userBalance = req.user.normalWallet.balance;
-                const percentage = userLevel.digitLevel.percentages[userLevel.digitLevel.current];
-                digitLevelIncome = (userBalance * percentage) / 100;
-            }
-        }
+        // Calculate level-based team income using LevelService
+        const LevelService = require('../services/levelService');
+        const characterLevelIncome = await LevelService.calculateCharacterLevelIncome(userId);
+        const digitLevelIncome = await LevelService.calculateDigitLevelIncome(userId);
 
         const dailyTeamIncome = characterLevelIncome + digitLevelIncome;
         
@@ -1987,6 +1934,882 @@ router.get('/transactions', auth, async (req, res) => {
         res.status(500).json({
             success: false,
             message: 'Error fetching transaction history',
+            error: error.message
+        });
+    }
+});
+
+// Get and update user levels
+router.get('/my-levels', auth, async (req, res) => {
+    try {
+        const userId = req.user.id;
+        const LevelService = require('../services/levelService');
+        
+        // Force recalculate levels
+        const characterLevel = await LevelService.calculateCharacterLevel(userId);
+        const digitLevel = await LevelService.calculateDigitLevel(userId);
+        
+        // Get level status
+        const levelStatus = await LevelService.getUserLevelStatus(userId);
+        
+        // Get direct referrals for verification
+        const directReferrals = await User.find({ referredBy: userId })
+            .select('name email phone normalWallet.balance createdAt');
+        
+        const validMembers = directReferrals.filter(ref => ref.normalWallet.balance >= 50);
+        
+        res.json({
+            success: true,
+            message: 'Level information retrieved successfully',
+            data: {
+                user: {
+                    id: req.user._id,
+                    name: req.user.name,
+                    email: req.user.email,
+                    referralCode: req.user.referralCode,
+                    normalWalletBalance: req.user.normalWallet.balance
+                },
+                levels: {
+                    characterLevel: characterLevel.current,
+                    digitLevel: digitLevel.current,
+                    characterLevelEarned: characterLevel.totalEarned || 0,
+                    digitLevelEarned: digitLevel.totalEarned || 0
+                },
+                criteria: {
+                    directReferrals: directReferrals.length,
+                    validMembers: validMembers.length,
+                    userWalletBalance: req.user.normalWallet.balance,
+                    requirements: {
+                        lvl1: { members: 5, wallet: 200 },
+                        lvl2: { members: 10, wallet: 500 },
+                        lvl3: { members: 40, wallet: 1100 },
+                        lvl4: { members: 40, wallet: 2500 },
+                        lvl5: { members: 80, wallet: 10000 }
+                    }
+                },
+                directReferrals: directReferrals.map(ref => ({
+                    id: ref._id,
+                    name: ref.name,
+                    email: ref.email,
+                    phone: ref.phone,
+                    walletBalance: ref.normalWallet.balance,
+                    isValid: ref.normalWallet.balance >= 50,
+                    joinedDate: ref.createdAt
+                })),
+                potentialIncome: levelStatus.potentialIncome,
+                canClaim: levelStatus.canClaim,
+                lastClaimed: levelStatus.dailyIncome.lastClaimed
+            }
+        });
+    } catch (error) {
+        console.error('Error getting user levels:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Error getting user levels',
+            error: error.message
+        });
+    }
+});
+
+// Force update user levels
+router.post('/update-levels', auth, async (req, res) => {
+    try {
+        const userId = req.user.id;
+        const LevelService = require('../services/levelService');
+        
+        // Force recalculate both levels
+        const characterLevel = await LevelService.calculateCharacterLevel(userId);
+        const digitLevel = await LevelService.calculateDigitLevel(userId);
+        
+        // Get updated level status
+        const levelStatus = await LevelService.getUserLevelStatus(userId);
+        
+        res.json({
+            success: true,
+            message: 'Levels updated successfully',
+            data: {
+                characterLevel: characterLevel.current,
+                digitLevel: digitLevel.current,
+                potentialIncome: levelStatus.potentialIncome,
+                canClaim: levelStatus.canClaim
+            }
+        });
+    } catch (error) {
+        console.error('Error updating user levels:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Error updating user levels',
+            error: error.message
+        });
+    }
+});
+
+// Debug digit level calculation
+router.get('/debug-digit-level', auth, async (req, res) => {
+    try {
+        const userId = req.user.id;
+        const LevelService = require('../services/levelService');
+        const Level = require('../models/level.model');
+        
+        // Get user and level data
+        const user = await User.findById(userId);
+        let level = await Level.findOne({ userId });
+        
+        if (!level) {
+            level = await LevelService.initializeLevel(userId);
+        }
+        
+        // Get direct referrals
+        const directReferrals = await User.find({ referredBy: userId })
+            .select('name email phone normalWallet.balance createdAt');
+        
+        // Calculate digit level manually
+        const userNormalWallet = user.normalWallet?.balance || 0;
+        const validMembers = directReferrals.filter(ref => ref.normalWallet.balance >= 50);
+        
+        let calculatedDigitLevel = null;
+        
+        // Check each level criteria
+        const levelChecks = {
+            lvl5: { members: validMembers.length >= 80, wallet: userNormalWallet >= 10000, result: validMembers.length >= 80 && userNormalWallet >= 10000 },
+            lvl4: { members: validMembers.length >= 40, wallet: userNormalWallet >= 2500, result: validMembers.length >= 40 && userNormalWallet >= 2500 },
+            lvl3: { members: validMembers.length >= 40, wallet: userNormalWallet >= 1100, result: validMembers.length >= 40 && userNormalWallet >= 1100 },
+            lvl2: { members: validMembers.length >= 10, wallet: userNormalWallet >= 500, result: validMembers.length >= 10 && userNormalWallet >= 500 },
+            lvl1: { members: validMembers.length >= 5, wallet: userNormalWallet >= 200, result: validMembers.length >= 5 && userNormalWallet >= 200 }
+        };
+        
+        // Determine level
+        if (levelChecks.lvl5.result) calculatedDigitLevel = 'Lvl5';
+        else if (levelChecks.lvl4.result) calculatedDigitLevel = 'Lvl4';
+        else if (levelChecks.lvl3.result) calculatedDigitLevel = 'Lvl3';
+        else if (levelChecks.lvl2.result) calculatedDigitLevel = 'Lvl2';
+        else if (levelChecks.lvl1.result) calculatedDigitLevel = 'Lvl1';
+        
+        // Force update digit level
+        const updatedDigitLevel = await LevelService.calculateDigitLevel(userId);
+        
+        res.json({
+            success: true,
+            data: {
+                user: {
+                    id: user._id,
+                    name: user.name,
+                    email: user.email,
+                    normalWalletBalance: userNormalWallet
+                },
+                directReferrals: {
+                    total: directReferrals.length,
+                    valid: validMembers.length,
+                    members: directReferrals.map(ref => ({
+                        id: ref._id,
+                        name: ref.name,
+                        email: ref.email,
+                        walletBalance: ref.normalWallet.balance,
+                        isValid: ref.normalWallet.balance >= 50
+                    }))
+                },
+                levelChecks: levelChecks,
+                calculatedLevel: calculatedDigitLevel,
+                currentLevel: level.digitLevel.current,
+                updatedLevel: updatedDigitLevel.current,
+                levelChanged: level.digitLevel.current !== updatedDigitLevel.current,
+                dailyBenefits: {
+                    currentLevel: {
+                        level: calculatedDigitLevel,
+                        percentage: calculatedDigitLevel ? level.digitLevel.percentages[calculatedDigitLevel] : 0,
+                        dailyIncome: calculatedDigitLevel ? (userNormalWallet * level.digitLevel.percentages[calculatedDigitLevel] / 100) : 0,
+                        monthlyIncome: calculatedDigitLevel ? (userNormalWallet * level.digitLevel.percentages[calculatedDigitLevel] / 100) * 30 : 0
+                    },
+                    nextLevel: {
+                        lvl2: {
+                            membersNeeded: Math.max(0, 10 - validMembers.length),
+                            walletNeeded: Math.max(0, 500 - userNormalWallet),
+                            percentage: level.digitLevel.percentages.Lvl2,
+                            potentialDailyIncome: (userNormalWallet * level.digitLevel.percentages.Lvl2 / 100),
+                            potentialMonthlyIncome: (userNormalWallet * level.digitLevel.percentages.Lvl2 / 100) * 30
+                        },
+                        lvl3: {
+                            membersNeeded: Math.max(0, 40 - validMembers.length),
+                            walletNeeded: Math.max(0, 1100 - userNormalWallet),
+                            percentage: level.digitLevel.percentages.Lvl3,
+                            potentialDailyIncome: (userNormalWallet * level.digitLevel.percentages.Lvl3 / 100),
+                            potentialMonthlyIncome: (userNormalWallet * level.digitLevel.percentages.Lvl3 / 100) * 30
+                        },
+                        lvl4: {
+                            membersNeeded: Math.max(0, 40 - validMembers.length),
+                            walletNeeded: Math.max(0, 2500 - userNormalWallet),
+                            percentage: level.digitLevel.percentages.Lvl4,
+                            potentialDailyIncome: (userNormalWallet * level.digitLevel.percentages.Lvl4 / 100),
+                            potentialMonthlyIncome: (userNormalWallet * level.digitLevel.percentages.Lvl4 / 100) * 30
+                        },
+                        lvl5: {
+                            membersNeeded: Math.max(0, 80 - validMembers.length),
+                            walletNeeded: Math.max(0, 10000 - userNormalWallet),
+                            percentage: level.digitLevel.percentages.Lvl5,
+                            potentialDailyIncome: (userNormalWallet * level.digitLevel.percentages.Lvl5 / 100),
+                            potentialMonthlyIncome: (userNormalWallet * level.digitLevel.percentages.Lvl5 / 100) * 30
+                        }
+                    }
+                },
+                requirements: {
+                    lvl1: { members: 5, wallet: 200 },
+                    lvl2: { members: 10, wallet: 500 },
+                    lvl3: { members: 40, wallet: 1100 },
+                    lvl4: { members: 40, wallet: 2500 },
+                    lvl5: { members: 80, wallet: 10000 }
+                }
+            }
+        });
+    } catch (error) {
+        console.error('Error debugging digit level:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Error debugging digit level',
+            error: error.message
+        });
+    }
+});
+
+// Force update digit level only
+router.post('/update-digit-level', auth, async (req, res) => {
+    try {
+        const userId = req.user.id;
+        const LevelService = require('../services/levelService');
+        const Level = require('../models/level.model');
+        
+        // Get current user and level data
+        const user = await User.findById(userId);
+        let level = await Level.findOne({ userId });
+        
+        if (!level) {
+            level = await LevelService.initializeLevel(userId);
+        }
+        
+        // Get direct referrals
+        const directReferrals = await User.find({ referredBy: userId })
+            .select('name email phone normalWallet.balance createdAt');
+        
+        // Update direct members list in level
+        level.digitLevel.directMembers = directReferrals.map(ref => ({
+            memberId: ref._id,
+            joinedAt: ref.createdAt,
+            walletBalance: ref.normalWallet?.balance || 0
+        }));
+        
+        // Calculate digit level manually
+        const userNormalWallet = user.normalWallet?.balance || 0;
+        const validMembers = level.digitLevel.directMembers.filter(
+            member => member.walletBalance >= 50
+        );
+        
+        let newDigitLevel = null;
+        
+        // Check each level criteria
+        if (validMembers.length >= 80 && userNormalWallet >= 10000) {
+            newDigitLevel = 'Lvl5';
+        } else if (validMembers.length >= 40 && userNormalWallet >= 2500) {
+            newDigitLevel = 'Lvl4';
+        } else if (validMembers.length >= 40 && userNormalWallet >= 1100) {
+            newDigitLevel = 'Lvl3';
+        } else if (validMembers.length >= 10 && userNormalWallet >= 500) {
+            newDigitLevel = 'Lvl2';
+        } else if (validMembers.length >= 5 && userNormalWallet >= 200) {
+            newDigitLevel = 'Lvl1';
+        }
+        
+        // Update digit level
+        const oldLevel = level.digitLevel.current;
+        level.digitLevel.current = newDigitLevel;
+        level.digitLevel.lastCalculated = new Date();
+        await level.save();
+        
+        // Calculate potential income
+        let digitLevelIncome = 0;
+        if (newDigitLevel) {
+            const percentage = level.digitLevel.percentages[newDigitLevel];
+            digitLevelIncome = (userNormalWallet * percentage) / 100;
+        }
+        
+        res.json({
+            success: true,
+            message: 'Digit level updated successfully',
+            data: {
+                user: {
+                    id: user._id,
+                    name: user.name,
+                    email: user.email,
+                    normalWalletBalance: userNormalWallet
+                },
+                directReferrals: {
+                    total: directReferrals.length,
+                    valid: validMembers.length,
+                    members: directReferrals.map(ref => ({
+                        id: ref._id,
+                        name: ref.name,
+                        email: ref.email,
+                        walletBalance: ref.normalWallet.balance,
+                        isValid: ref.normalWallet.balance >= 50
+                    }))
+                },
+                levelUpdate: {
+                    oldLevel: oldLevel,
+                    newLevel: newDigitLevel,
+                    levelChanged: oldLevel !== newDigitLevel
+                },
+                criteria: {
+                    validMembers: validMembers.length,
+                    userWallet: userNormalWallet,
+                    requirements: {
+                        lvl1: { members: 5, wallet: 200, met: validMembers.length >= 5 && userNormalWallet >= 200 },
+                        lvl2: { members: 10, wallet: 500, met: validMembers.length >= 10 && userNormalWallet >= 500 },
+                        lvl3: { members: 40, wallet: 1100, met: validMembers.length >= 40 && userNormalWallet >= 1100 },
+                        lvl4: { members: 40, wallet: 2500, met: validMembers.length >= 40 && userNormalWallet >= 2500 },
+                        lvl5: { members: 80, wallet: 10000, met: validMembers.length >= 80 && userNormalWallet >= 10000 }
+                    }
+                },
+                potentialIncome: {
+                    digitLevel: digitLevelIncome,
+                    percentage: newDigitLevel ? level.digitLevel.percentages[newDigitLevel] : 0
+                }
+            }
+        });
+    } catch (error) {
+        console.error('Error updating digit level:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Error updating digit level',
+            error: error.message
+        });
+    }
+});
+
+// Debug character level calculation
+router.get('/debug-character-level', auth, async (req, res) => {
+    try {
+        const userId = req.user.id;
+        const LevelService = require('../services/levelService');
+        const Level = require('../models/level.model');
+        
+        // Get user and level data
+        const user = await User.findById(userId).populate('referredBy');
+        let level = await Level.findOne({ userId });
+        
+        if (!level) {
+            level = await LevelService.initializeLevel(userId);
+        }
+        
+        // Get direct referrals for character level calculation
+        const directReferrals = await User.find({ referredBy: userId })
+            .select('name email phone normalWallet.balance createdAt');
+        
+        // Calculate character level manually
+        let currentUser = user;
+        let depth = 0;
+        const characterLevels = ['A', 'B', 'C', 'D', 'E'];
+        
+        while (currentUser.referredBy && depth < characterLevels.length) {
+            currentUser = await User.findById(currentUser.referredBy).populate('referredBy');
+            depth++;
+        }
+        
+        const calculatedCharacterLevel = depth < characterLevels.length ? characterLevels[depth] : null;
+        
+        // Calculate character level income from direct referrals
+        let characterLevelIncome = 0;
+        let totalDirectReferralBalance = 0;
+        
+        if (calculatedCharacterLevel && directReferrals.length > 0) {
+            totalDirectReferralBalance = directReferrals.reduce((sum, ref) => sum + (ref.normalWallet?.balance || 0), 0);
+            const percentage = level.characterLevel.percentages[calculatedCharacterLevel];
+            characterLevelIncome = (totalDirectReferralBalance * percentage) / 100;
+        }
+        
+        // Force update character level
+        const updatedCharacterLevel = await LevelService.calculateCharacterLevel(userId);
+        
+        // Get referral chain for analysis
+        const referralChain = [];
+        let chainUser = user;
+        let chainDepth = 0;
+        
+        while (chainUser.referredBy && chainDepth < 5) {
+            const parent = await User.findById(chainUser.referredBy);
+            if (parent) {
+                referralChain.push({
+                    level: characterLevels[chainDepth] || 'Beyond E',
+                    userId: parent._id,
+                    name: parent.name,
+                    email: parent.email,
+                    walletBalance: parent.normalWallet?.balance || 0,
+                    percentage: characterLevels[chainDepth] ? level.characterLevel.percentages[characterLevels[chainDepth]] : 0,
+                    potentialIncome: characterLevels[chainDepth] ? (parent.normalWallet?.balance || 0) * level.characterLevel.percentages[characterLevels[chainDepth]] / 100 : 0
+                });
+            }
+            chainUser = parent;
+            chainDepth++;
+        }
+        
+        res.json({
+            success: true,
+            data: {
+                user: {
+                    id: user._id,
+                    name: user.name,
+                    email: user.email,
+                    referredBy: user.referredBy ? {
+                        id: user.referredBy._id,
+                        name: user.referredBy.name,
+                        email: user.referredBy.email
+                    } : null
+                },
+                characterLevel: {
+                    calculatedLevel: calculatedCharacterLevel,
+                    currentLevel: level.characterLevel.current,
+                    updatedLevel: updatedCharacterLevel.current,
+                    levelChanged: level.characterLevel.current !== updatedCharacterLevel.current,
+                    depth: depth,
+                    maxDepth: characterLevels.length
+                },
+                directReferrals: {
+                    total: directReferrals.length,
+                    totalBalance: totalDirectReferralBalance,
+                    members: directReferrals.map(ref => ({
+                        id: ref._id,
+                        name: ref.name,
+                        email: ref.email,
+                        walletBalance: ref.normalWallet?.balance || 0
+                    }))
+                },
+                dailyBenefits: {
+                    currentLevel: {
+                        level: calculatedCharacterLevel,
+                        percentage: calculatedCharacterLevel ? level.characterLevel.percentages[calculatedCharacterLevel] : 0,
+                        dailyIncome: characterLevelIncome,
+                        monthlyIncome: characterLevelIncome * 30,
+                        sourceBalance: totalDirectReferralBalance
+                    },
+                    allLevels: {
+                        A: {
+                            percentage: level.characterLevel.percentages.A,
+                            potentialDailyIncome: totalDirectReferralBalance * level.characterLevel.percentages.A / 100,
+                            potentialMonthlyIncome: (totalDirectReferralBalance * level.characterLevel.percentages.A / 100) * 30,
+                            description: "Direct referral of top user (no upline) - earns from direct referrals"
+                        },
+                        B: {
+                            percentage: level.characterLevel.percentages.B,
+                            potentialDailyIncome: totalDirectReferralBalance * level.characterLevel.percentages.B / 100,
+                            potentialMonthlyIncome: (totalDirectReferralBalance * level.characterLevel.percentages.B / 100) * 30,
+                            description: "2nd level in referral chain - earns from direct referrals"
+                        },
+                        C: {
+                            percentage: level.characterLevel.percentages.C,
+                            potentialDailyIncome: totalDirectReferralBalance * level.characterLevel.percentages.C / 100,
+                            potentialMonthlyIncome: (totalDirectReferralBalance * level.characterLevel.percentages.C / 100) * 30,
+                            description: "3rd level in referral chain - earns from direct referrals"
+                        },
+                        D: {
+                            percentage: level.characterLevel.percentages.D,
+                            potentialDailyIncome: totalDirectReferralBalance * level.characterLevel.percentages.D / 100,
+                            potentialMonthlyIncome: (totalDirectReferralBalance * level.characterLevel.percentages.D / 100) * 30,
+                            description: "4th level in referral chain - earns from direct referrals"
+                        },
+                        E: {
+                            percentage: level.characterLevel.percentages.E,
+                            potentialDailyIncome: totalDirectReferralBalance * level.characterLevel.percentages.E / 100,
+                            potentialMonthlyIncome: (totalDirectReferralBalance * level.characterLevel.percentages.E / 100) * 30,
+                            description: "5th level in referral chain - earns from direct referrals"
+                        }
+                    }
+                },
+                referralChain: referralChain,
+                requirements: {
+                    A: { description: "Direct referral of top user (no upline)", depth: 0 },
+                    B: { description: "2nd level in referral chain", depth: 1 },
+                    C: { description: "3rd level in referral chain", depth: 2 },
+                    D: { description: "4th level in referral chain", depth: 3 },
+                    E: { description: "5th level in referral chain", depth: 4 }
+                },
+                analysis: {
+                    hasDirectReferrals: directReferrals.length > 0,
+                    totalDirectReferralBalance: totalDirectReferralBalance,
+                    canEarnCharacterIncome: !!calculatedCharacterLevel && directReferrals.length > 0,
+                    incomeSource: directReferrals.length > 0 ? `Direct referrals' wallets (${totalDirectReferralBalance})` : "No direct referrals",
+                    recommendation: directReferrals.length === 0 ? "You need direct referrals to earn character level income" : 
+                                  !calculatedCharacterLevel ? "Your referral chain is too deep for character level income" :
+                                  `You can earn character level income from your ${directReferrals.length} direct referrals' wallets`
+                }
+            }
+        });
+    } catch (error) {
+        console.error('Error debugging character level:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Error debugging character level',
+            error: error.message
+        });
+    }
+});
+
+// Claim both digit level and character level income daily
+router.post('/claim-level-income', auth, async (req, res) => {
+    try {
+        const userId = req.user.id;
+        const LevelService = require('../services/levelService');
+        const Level = require('../models/level.model');
+        
+        // Get user and level data
+        const user = await User.findById(userId);
+        let level = await Level.findOne({ userId });
+        
+        if (!level) {
+            level = await LevelService.initializeLevel(userId);
+        }
+        
+        // Check if already claimed today
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        
+        if (level.dailyIncome.lastClaimed) {
+            const lastClaimed = new Date(level.dailyIncome.lastClaimed);
+            lastClaimed.setHours(0, 0, 0, 0);
+            
+            if (lastClaimed.getTime() === today.getTime()) {
+                return res.status(400).json({
+                    success: false,
+                    message: 'Level income already claimed today. Please try again tomorrow.',
+                    data: {
+                        lastClaimed: level.dailyIncome.lastClaimed,
+                        nextClaimAvailable: new Date(today.getTime() + 24 * 60 * 60 * 1000)
+                    }
+                });
+            }
+        }
+        
+        // Calculate digit level income
+        let digitLevelIncome = 0;
+        if (level.digitLevel.current) {
+            const userWalletBalance = user.normalWallet?.balance || 0;
+            const percentage = level.digitLevel.percentages[level.digitLevel.current];
+            digitLevelIncome = (userWalletBalance * percentage) / 100;
+        }
+        
+        // Calculate character level income
+        let characterLevelIncome = 0;
+        const directReferrals = await User.find({ referredBy: userId })
+            .select('normalWallet.balance');
+        
+        if (level.characterLevel.current && directReferrals.length > 0) {
+            const totalDirectReferralBalance = directReferrals.reduce((sum, ref) => sum + (ref.normalWallet?.balance || 0), 0);
+            const percentage = level.characterLevel.percentages[level.characterLevel.current];
+            characterLevelIncome = (totalDirectReferralBalance * percentage) / 100;
+        }
+        
+        const totalLevelIncome = digitLevelIncome + characterLevelIncome;
+        
+        if (totalLevelIncome <= 0) {
+            return res.status(400).json({
+                success: false,
+                message: 'No level income available to claim.',
+                data: {
+                    digitLevelIncome: 0,
+                    characterLevelIncome: 0,
+                    totalLevelIncome: 0,
+                    digitLevel: level.digitLevel.current,
+                    characterLevel: level.characterLevel.current
+                }
+            });
+        }
+        
+        // Credit level income to normal wallet
+        user.normalWallet.balance += totalLevelIncome;
+        user.normalWallet.transactions.push({
+            type: 'level_income',
+            amount: totalLevelIncome,
+            description: `Level income - Digit: ${digitLevelIncome.toFixed(2)}, Character: ${characterLevelIncome.toFixed(2)}`,
+            status: 'approved'
+        });
+        
+        // Update level tracking
+        level.dailyIncome.characterLevel = characterLevelIncome;
+        level.dailyIncome.digitLevel = digitLevelIncome;
+        level.dailyIncome.lastClaimed = new Date();
+        
+        // Update total earned
+        if (level.characterLevel) {
+            level.characterLevel.totalEarned += characterLevelIncome;
+        }
+        if (level.digitLevel) {
+            level.digitLevel.totalEarned += digitLevelIncome;
+        }
+        
+        await user.save();
+        await level.save();
+        
+        res.json({
+            success: true,
+            message: 'Level income claimed successfully',
+            data: {
+                digitLevel: {
+                    level: level.digitLevel.current,
+                    income: digitLevelIncome,
+                    percentage: level.digitLevel.current ? level.digitLevel.percentages[level.digitLevel.current] : 0,
+                    totalEarned: level.digitLevel.totalEarned
+                },
+                characterLevel: {
+                    level: level.characterLevel.current,
+                    income: characterLevelIncome,
+                    percentage: level.characterLevel.current ? level.characterLevel.percentages[level.characterLevel.current] : 0,
+                    totalEarned: level.characterLevel.totalEarned,
+                    directReferralsCount: directReferrals.length,
+                    totalDirectReferralBalance: directReferrals.reduce((sum, ref) => sum + (ref.normalWallet?.balance || 0), 0)
+                },
+                totalIncome: {
+                    daily: totalLevelIncome,
+                    monthly: totalLevelIncome * 30,
+                    newBalance: user.normalWallet.balance
+                },
+                lastClaimed: new Date(),
+                nextClaimAvailable: new Date(today.getTime() + 24 * 60 * 60 * 1000)
+            }
+        });
+    } catch (error) {
+        console.error('Error claiming level income:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Error claiming level income',
+            error: error.message
+        });
+    }
+});
+
+// Get level progress with progress bars
+router.get('/level-progress', auth, async (req, res) => {
+    try {
+        const userId = req.user.id;
+        const LevelService = require('../services/levelService');
+        const Level = require('../models/level.model');
+        
+        // Get user and level data
+        const user = await User.findById(userId);
+        let level = await Level.findOne({ userId });
+        
+        if (!level) {
+            level = await LevelService.initializeLevel(userId);
+        }
+        
+        // Get direct referrals
+        const directReferrals = await User.find({ referredBy: userId })
+            .select('name email phone normalWallet.balance createdAt');
+        
+        const userNormalWallet = user.normalWallet?.balance || 0;
+        const validMembers = directReferrals.filter(ref => ref.normalWallet.balance >= 50);
+        
+        // Calculate digit level progress
+        const digitLevelProgress = {
+            currentLevel: level.digitLevel.current,
+            currentLevelIndex: level.digitLevel.current ? ['Lvl1', 'Lvl2', 'Lvl3', 'Lvl4', 'Lvl5'].indexOf(level.digitLevel.current) : -1,
+            levels: {
+                lvl1: {
+                    name: 'Lvl1',
+                    requirements: { members: 5, wallet: 200 },
+                    current: { members: validMembers.length, wallet: userNormalWallet },
+                    met: validMembers.length >= 5 && userNormalWallet >= 200,
+                    progress: {
+                        members: Math.min(100, (validMembers.length / 5) * 100),
+                        wallet: Math.min(100, (userNormalWallet / 200) * 100),
+                        overall: Math.min(100, Math.min((validMembers.length / 5) * 100, (userNormalWallet / 200) * 100))
+                    }
+                },
+                lvl2: {
+                    name: 'Lvl2',
+                    requirements: { members: 10, wallet: 500 },
+                    current: { members: validMembers.length, wallet: userNormalWallet },
+                    met: validMembers.length >= 10 && userNormalWallet >= 500,
+                    progress: {
+                        members: Math.min(100, (validMembers.length / 10) * 100),
+                        wallet: Math.min(100, (userNormalWallet / 500) * 100),
+                        overall: Math.min(100, Math.min((validMembers.length / 10) * 100, (userNormalWallet / 500) * 100))
+                    }
+                },
+                lvl3: {
+                    name: 'Lvl3',
+                    requirements: { members: 40, wallet: 1100 },
+                    current: { members: validMembers.length, wallet: userNormalWallet },
+                    met: validMembers.length >= 40 && userNormalWallet >= 1100,
+                    progress: {
+                        members: Math.min(100, (validMembers.length / 40) * 100),
+                        wallet: Math.min(100, (userNormalWallet / 1100) * 100),
+                        overall: Math.min(100, Math.min((validMembers.length / 40) * 100, (userNormalWallet / 1100) * 100))
+                    }
+                },
+                lvl4: {
+                    name: 'Lvl4',
+                    requirements: { members: 40, wallet: 2500 },
+                    current: { members: validMembers.length, wallet: userNormalWallet },
+                    met: validMembers.length >= 40 && userNormalWallet >= 2500,
+                    progress: {
+                        members: Math.min(100, (validMembers.length / 40) * 100),
+                        wallet: Math.min(100, (userNormalWallet / 2500) * 100),
+                        overall: Math.min(100, Math.min((validMembers.length / 40) * 100, (userNormalWallet / 2500) * 100))
+                    }
+                },
+                lvl5: {
+                    name: 'Lvl5',
+                    requirements: { members: 80, wallet: 10000 },
+                    current: { members: validMembers.length, wallet: userNormalWallet },
+                    met: validMembers.length >= 80 && userNormalWallet >= 10000,
+                    progress: {
+                        members: Math.min(100, (validMembers.length / 80) * 100),
+                        wallet: Math.min(100, (userNormalWallet / 10000) * 100),
+                        overall: Math.min(100, Math.min((validMembers.length / 80) * 100, (userNormalWallet / 10000) * 100))
+                    }
+                }
+            },
+            nextLevel: null,
+            nextLevelRequirements: null
+        };
+        
+        // Find next level to achieve
+        const digitLevels = ['Lvl1', 'Lvl2', 'Lvl3', 'Lvl4', 'Lvl5'];
+        const currentIndex = digitLevelProgress.currentLevelIndex;
+        if (currentIndex >= 0 && currentIndex < digitLevels.length - 1) {
+            const nextLevelName = digitLevels[currentIndex + 1];
+            digitLevelProgress.nextLevel = nextLevelName;
+            digitLevelProgress.nextLevelRequirements = digitLevelProgress.levels[nextLevelName.toLowerCase()];
+        }
+        
+        // Calculate character level progress
+        let currentUser = user;
+        let depth = 0;
+        const characterLevels = ['A', 'B', 'C', 'D', 'E'];
+        
+        while (currentUser.referredBy && depth < characterLevels.length) {
+            currentUser = await User.findById(currentUser.referredBy).populate('referredBy');
+            depth++;
+        }
+        
+        const calculatedCharacterLevel = depth < characterLevels.length ? characterLevels[depth] : null;
+        
+        const characterLevelProgress = {
+            currentLevel: calculatedCharacterLevel,
+            currentLevelIndex: calculatedCharacterLevel ? characterLevels.indexOf(calculatedCharacterLevel) : -1,
+            depth: depth,
+            maxDepth: characterLevels.length,
+            levels: {
+                A: {
+                    name: 'A',
+                    description: 'Direct referral of top user (no upline)',
+                    depth: 0,
+                    current: depth === 0,
+                    met: depth === 0,
+                    progress: depth === 0 ? 100 : 0
+                },
+                B: {
+                    name: 'B',
+                    description: '2nd level in referral chain',
+                    depth: 1,
+                    current: depth === 1,
+                    met: depth <= 1,
+                    progress: depth <= 1 ? 100 : 0
+                },
+                C: {
+                    name: 'C',
+                    description: '3rd level in referral chain',
+                    depth: 2,
+                    current: depth === 2,
+                    met: depth <= 2,
+                    progress: depth <= 2 ? 100 : 0
+                },
+                D: {
+                    name: 'D',
+                    description: '4th level in referral chain',
+                    depth: 3,
+                    current: depth === 3,
+                    met: depth <= 3,
+                    progress: depth <= 3 ? 100 : 0
+                },
+                E: {
+                    name: 'E',
+                    description: '5th level in referral chain',
+                    depth: 4,
+                    current: depth === 4,
+                    met: depth <= 4,
+                    progress: depth <= 4 ? 100 : 0
+                }
+            },
+            nextLevel: null,
+            nextLevelRequirements: null
+        };
+        
+        // Find next character level (if applicable)
+        if (characterLevelProgress.currentLevelIndex >= 0 && characterLevelProgress.currentLevelIndex < characterLevels.length - 1) {
+            const nextLevelName = characterLevels[characterLevelProgress.currentLevelIndex + 1];
+            characterLevelProgress.nextLevel = nextLevelName;
+            characterLevelProgress.nextLevelRequirements = characterLevelProgress.levels[nextLevelName];
+        }
+        
+        // Calculate current income
+        let digitLevelIncome = 0;
+        if (level.digitLevel.current) {
+            const percentage = level.digitLevel.percentages[level.digitLevel.current];
+            digitLevelIncome = (userNormalWallet * percentage) / 100;
+        }
+        
+        let characterLevelIncome = 0;
+        if (calculatedCharacterLevel && directReferrals.length > 0) {
+            const totalDirectReferralBalance = directReferrals.reduce((sum, ref) => sum + (ref.normalWallet?.balance || 0), 0);
+            const percentage = level.characterLevel.percentages[calculatedCharacterLevel];
+            characterLevelIncome = (totalDirectReferralBalance * percentage) / 100;
+        }
+        
+        res.json({
+            success: true,
+            data: {
+                user: {
+                    id: user._id,
+                    name: user.name,
+                    email: user.email,
+                    normalWalletBalance: userNormalWallet,
+                    directReferralsCount: directReferrals.length,
+                    validMembersCount: validMembers.length
+                },
+                digitLevel: {
+                    ...digitLevelProgress,
+                    currentIncome: {
+                        daily: digitLevelIncome,
+                        monthly: digitLevelIncome * 30,
+                        percentage: level.digitLevel.current ? level.digitLevel.percentages[level.digitLevel.current] : 0,
+                        totalEarned: level.digitLevel.totalEarned || 0
+                    }
+                },
+                characterLevel: {
+                    ...characterLevelProgress,
+                    currentIncome: {
+                        daily: characterLevelIncome,
+                        monthly: characterLevelIncome * 30,
+                        percentage: calculatedCharacterLevel ? level.characterLevel.percentages[calculatedCharacterLevel] : 0,
+                        totalEarned: level.characterLevel.totalEarned || 0,
+                        directReferralsBalance: directReferrals.reduce((sum, ref) => sum + (ref.normalWallet?.balance || 0), 0)
+                    }
+                },
+                totalIncome: {
+                    daily: digitLevelIncome + characterLevelIncome,
+                    monthly: (digitLevelIncome + characterLevelIncome) * 30
+                },
+                summary: {
+                    currentDigitLevel: level.digitLevel.current,
+                    currentCharacterLevel: calculatedCharacterLevel,
+                    totalLevelsAchieved: (level.digitLevel.current ? 1 : 0) + (calculatedCharacterLevel ? 1 : 0),
+                    canEarnIncome: (digitLevelIncome > 0 || characterLevelIncome > 0),
+                    nextMilestone: digitLevelProgress.nextLevel || characterLevelProgress.nextLevel
+                }
+            }
+        });
+    } catch (error) {
+        console.error('Error getting level progress:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Error getting level progress',
             error: error.message
         });
     }

@@ -58,7 +58,7 @@ router.post('/signup', async (req, res) => {
         const token = jwt.sign(
             { userId: admin._id },
             process.env.JWT_SECRET || 'your-secret-key',
-            { expiresIn: '7d' }
+            { expiresIn: '365d' }
         );
 
         res.status(201).json({
@@ -119,7 +119,7 @@ router.post('/login', async (req, res) => {
         const token = jwt.sign(
             { userId: admin._id },
             process.env.JWT_SECRET || 'your-secret-key',
-            { expiresIn: '7d' }
+            { expiresIn: '365d' }
         );
 
         res.json({
@@ -610,6 +610,85 @@ router.post('/first-deposit-bonus-percentage', adminAuth, async (req, res) => {
         res.status(500).json({
             success: false,
             message: 'Error updating global first deposit bonus percentage',
+            error: error.message
+        });
+    }
+});
+
+// Manual trigger for cron jobs (Admin only)
+router.post('/trigger-daily-update', adminAuth, async (req, res) => {
+    try {
+        // Check if user is admin
+        if (req.user.role !== 'admin') {
+            return res.status(403).json({
+                success: false,
+                message: 'Access denied. Admin only.'
+            });
+        }
+
+        const cronService = require('../services/cronService');
+        await cronService.triggerDailyUpdate();
+
+        res.json({
+            success: true,
+            message: 'Daily update triggered successfully'
+        });
+    } catch (error) {
+        res.status(500).json({
+            success: false,
+            message: 'Error triggering daily update',
+            error: error.message
+        });
+    }
+});
+
+router.post('/trigger-weekly-recalculation', adminAuth, async (req, res) => {
+    try {
+        // Check if user is admin
+        if (req.user.role !== 'admin') {
+            return res.status(403).json({
+                success: false,
+                message: 'Access denied. Admin only.'
+            });
+        }
+
+        const cronService = require('../services/cronService');
+        await cronService.triggerWeeklyRecalculation();
+
+        res.json({
+            success: true,
+            message: 'Weekly recalculation triggered successfully'
+        });
+    } catch (error) {
+        res.status(500).json({
+            success: false,
+            message: 'Error triggering weekly recalculation',
+            error: error.message
+        });
+    }
+});
+
+router.get('/cron-status', adminAuth, async (req, res) => {
+    try {
+        // Check if user is admin
+        if (req.user.role !== 'admin') {
+            return res.status(403).json({
+                success: false,
+                message: 'Access denied. Admin only.'
+            });
+        }
+
+        const cronService = require('../services/cronService');
+        const status = cronService.getStatus();
+
+        res.json({
+            success: true,
+            data: status
+        });
+    } catch (error) {
+        res.status(500).json({
+            success: false,
+            message: 'Error getting cron status',
             error: error.message
         });
     }

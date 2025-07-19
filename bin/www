@@ -86,5 +86,9 @@ function onListening() {
   var bind = typeof addr === 'string'
     ? 'pipe ' + addr
     : 'port ' + addr.port;
-    console.log('Listening on ' + bind);
+    console.log('🚀 Server is running on ' + bind);
+    
+    // Initialize cron jobs after server starts
+    const cronService = require('../services/cronService');
+    cronService.init();
 }
