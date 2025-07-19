@@ -71,7 +71,7 @@ const userSchema = new mongoose.Schema({
         transactions: [{
             type: {
                 type: String,
-                enum: ['deposit', 'withdrawal', 'transfer', 'transfer_to_user', 'transfer_from_user', 'referral_bonus', 'commission']
+                enum: ['deposit', 'withdrawal', 'transfer', 'transfer_to_user', 'transfer_from_user', 'referral_bonus', 'commission', 'level_income', 'team_income']
             },
             amount: Number,
             description: String,
@@ -94,7 +94,7 @@ const userSchema = new mongoose.Schema({
         transactions: [{
             type: {
                 type: String,
-                enum: ['deposit', 'withdrawal', 'transfer', 'transfer_to_user', 'transfer_from_user', 'referral_bonus', 'daily_income']
+                enum: ['deposit', 'withdrawal', 'transfer', 'transfer_to_user', 'transfer_from_user', 'referral_bonus', 'daily_income', 'level_income', 'team_income']
             },
             amount: Number,
             description: String,

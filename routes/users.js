@@ -1714,7 +1714,9 @@ router.get('/activity', auth, async (req, res) => {
                 totalWithdrawals: user.normalWallet.transactions.filter(t => t.type === 'withdrawal').reduce((sum, t) => sum + Math.abs(t.amount), 0),
                 totalTransfers: user.normalWallet.transactions.filter(t => t.type === 'transfer' || t.type === 'transfer_to_user' || t.type === 'transfer_from_user').reduce((sum, t) => sum + Math.abs(t.amount), 0),
                 totalReferralBonus: user.normalWallet.transactions.filter(t => t.type === 'referral_bonus').reduce((sum, t) => sum + t.amount, 0),
-                totalDailyIncome: user.normalWallet.transactions.filter(t => t.type === 'daily_income').reduce((sum, t) => sum + t.amount, 0)
+                totalDailyIncome: user.normalWallet.transactions.filter(t => t.type === 'daily_income').reduce((sum, t) => sum + t.amount, 0),
+                totalLevelIncome: user.normalWallet.transactions.filter(t => t.type === 'level_income').reduce((sum, t) => sum + t.amount, 0),
+                totalTeamIncome: user.normalWallet.transactions.filter(t => t.type === 'team_income').reduce((sum, t) => sum + t.amount, 0)
             },
             investmentWallet: {
                 balance: user.investmentWallet.balance,
@@ -1723,7 +1725,9 @@ router.get('/activity', auth, async (req, res) => {
                 totalWithdrawals: user.investmentWallet.transactions.filter(t => t.type === 'withdrawal').reduce((sum, t) => sum + Math.abs(t.amount), 0),
                 totalTransfers: user.investmentWallet.transactions.filter(t => t.type === 'transfer' || t.type === 'transfer_to_user' || t.type === 'transfer_from_user').reduce((sum, t) => sum + Math.abs(t.amount), 0),
                 totalReferralBonus: user.investmentWallet.transactions.filter(t => t.type === 'referral_bonus').reduce((sum, t) => sum + t.amount, 0),
-                totalCommission: user.investmentWallet.transactions.filter(t => t.type === 'commission').reduce((sum, t) => sum + t.amount, 0)
+                totalCommission: user.investmentWallet.transactions.filter(t => t.type === 'commission').reduce((sum, t) => sum + t.amount, 0),
+                totalLevelIncome: user.investmentWallet.transactions.filter(t => t.type === 'level_income').reduce((sum, t) => sum + t.amount, 0),
+                totalTeamIncome: user.investmentWallet.transactions.filter(t => t.type === 'team_income').reduce((sum, t) => sum + t.amount, 0)
             }
         };
 
@@ -1896,6 +1900,8 @@ router.get('/transactions', auth, async (req, res) => {
                 transfer_from_user: filteredTransactions.filter(t => t.type === 'transfer_from_user').length,
                 referral_bonus: filteredTransactions.filter(t => t.type === 'referral_bonus').length,
                 daily_income: filteredTransactions.filter(t => t.type === 'daily_income').length,
+                level_income: filteredTransactions.filter(t => t.type === 'level_income').length,
+                team_income: filteredTransactions.filter(t => t.type === 'team_income').length,
                 commission: filteredTransactions.filter(t => t.type === 'commission').length
             },
             byStatus: {
@@ -1908,7 +1914,9 @@ router.get('/transactions', auth, async (req, res) => {
                 withdrawals: filteredTransactions.filter(t => t.type === 'withdrawal').reduce((sum, t) => sum + Math.abs(t.amount), 0),
                 transfers: filteredTransactions.filter(t => t.type.includes('transfer')).reduce((sum, t) => sum + Math.abs(t.amount), 0),
                 bonuses: filteredTransactions.filter(t => t.type === 'referral_bonus').reduce((sum, t) => sum + t.amount, 0),
-                dailyIncome: filteredTransactions.filter(t => t.type === 'daily_income').reduce((sum, t) => sum + t.amount, 0)
+                dailyIncome: filteredTransactions.filter(t => t.type === 'daily_income').reduce((sum, t) => sum + t.amount, 0),
+                levelIncome: filteredTransactions.filter(t => t.type === 'level_income').reduce((sum, t) => sum + t.amount, 0),
+                teamIncome: filteredTransactions.filter(t => t.type === 'team_income').reduce((sum, t) => sum + t.amount, 0)
             }
         };
 
