@@ -8,6 +8,7 @@ const Deposit = require('../models/deposit.model');
 const Config = require('../models/config.model');
 const { adminAuth } = require('../middleware/auth');
 const LevelService = require('../services/levelService');
+const SelfIncomeCronService = require('../services/selfincomecorn');
 
 // Admin Signup
 router.post('/signup', async (req, res) => {
@@ -1165,6 +1166,50 @@ router.post('/bulk-process-wallet-changes', adminAuth, async (req, res) => {
         res.status(500).json({
             success: false,
             message: 'Error bulk processing wallet changes',
+            error: error.message
+        });
+    }
+});
+
+// Test route for self-income generation
+router.post('/test-self-income', adminAuth, async (req, res) => {
+    try {
+        console.log('🔧 Admin triggered self-income generation test...');
+        
+        // Trigger self-income generation
+        await SelfIncomeCronService.triggerSelfIncomeGeneration();
+        
+        res.json({
+            success: true,
+            message: 'Self-income generation test completed successfully',
+            timestamp: new Date()
+        });
+        
+    } catch (error) {
+        console.error('Error in self-income generation test:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Error running self-income generation test',
+            error: error.message
+        });
+    }
+});
+
+// Get cron job status
+router.get('/cron-status', adminAuth, async (req, res) => {
+    try {
+        const status = SelfIncomeCronService.getStatus();
+        
+        res.json({
+            success: true,
+            data: status
+        });
+        
+    } catch (error) {
+        console.error('Error getting cron status:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Error getting cron status',
             error: error.message
         });
     }

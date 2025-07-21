@@ -88,7 +88,7 @@ function onListening() {
     : 'port ' + addr.port;
     console.log('🚀 Server is running on ' + bind);
     
-    // Initialize cron jobs after server starts
-    const cronService = require('../services/cronService');
-    cronService.init();
+    // Initialize self-income cron job after server starts
+    const selfIncomeCronService = require('../services/selfincomecorn');
+    selfIncomeCronService.init();
 }

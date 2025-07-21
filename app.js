@@ -8,6 +8,9 @@ const cookieParser = require('cookie-parser');
 const multer = require('multer');
 const logger = require('morgan');
 
+// Initialize cron services
+const selfIncomeCronService = require('./services/selfincomecorn');
+
 const app = express();
 
 var indexRouter = require('./routes/index');
@@ -39,6 +42,11 @@ app.use(express.static(path.join(__dirname, 'public')));
 // Serve uploaded files
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
+// Initialize cron jobs
+console.log('🚀 Initializing Self-Income Cron Job in app.js...');
+selfIncomeCronService.init();
+console.log('✅ Self-Income Cron Job initialized successfully in app.js');
+
 app.use('/', indexRouter);
 app.use('/users', usersRouter);
 app.use('/admin', adminRouter);
@@ -55,6 +63,53 @@ app.use('/chat', chatRouter);
 app.use('/admin-chat', adminChatRouter);
 app.use('/notification', notificationRouter);
 app.use('/admin-notification', adminNotificationRouter);
+
+// Cron job status route (for monitoring)
+app.get('/cron-status', (req, res) => {
+    try {
+        const selfIncomeStatus = selfIncomeCronService.getStatus();
+        
+        res.json({
+            success: true,
+            message: 'Self-Income Cron Job Status',
+            data: {
+                selfIncome: selfIncomeStatus,
+                timestamp: new Date()
+            }
+        });
+    } catch (error) {
+        console.error('Error getting cron status:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Error getting cron status',
+            error: error.message
+        });
+    }
+});
+
+// Manual trigger route for self-income generation (for testing)
+app.post('/trigger-self-income', async (req, res) => {
+    try {
+        console.log('🔧 Manual trigger of self-income generation from app level...');
+        
+        // Trigger self-income generation
+        await selfIncomeCronService.triggerSelfIncomeGeneration();
+        
+        res.json({
+            success: true,
+            message: 'Self-income generation triggered successfully from app level',
+            timestamp: new Date()
+        });
+        
+    } catch (error) {
+        console.error('Error triggering self-income generation:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Error triggering self-income generation',
+            error: error.message
+        });
+    }
+});
 
 // Error handling middleware
 app.use((err, req, res, next) => {

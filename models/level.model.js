@@ -16,11 +16,11 @@ const levelSchema = new mongoose.Schema({
             required: false
         },
         percentages: {
-            A: { type: Number, default: 10.0 },    // 10%
-            B: { type: Number, default: 5.0 },     // 5%
-            C: { type: Number, default: 2.5 },     // 2.5%
-            D: { type: Number, default: 1.25 },    // 1.25%
-            E: { type: Number, default: 0.75 }     // 0.75%
+            A: { type: Number, default: 1.0 },     // 1%
+            B: { type: Number, default: 0.50 },    // 0.50%
+            C: { type: Number, default: 0.25 },    // 0.25%
+            D: { type: Number, default: 0.125 },   // 0.125%
+            E: { type: Number, default: 0.075 }    // 0.075%
         },
         lastCalculated: {
             type: Date,
