@@ -10,7 +10,7 @@ class SelfIncomeCronService {
     init() {
         console.log('💰 Initializing Self-Income Cron Job...');
         
-        // Daily self-income generation at 12:00 PM (noon)
+        // Daily self-income generation at 6:00 AM (morning)
         this.scheduleSelfIncomeGeneration();
         
         console.log('✅ Self-Income Cron Job initialized successfully');
@@ -18,16 +18,16 @@ class SelfIncomeCronService {
 
     // Schedule daily self-income generation
     scheduleSelfIncomeGeneration() {
-        // Run at 12:00 PM (noon) every day
-        cron.schedule('0 12 * * *', async () => {
-            console.log('🕛 Starting daily self-income generation...');
+        // Run at 6:00 AM (morning) every day
+        cron.schedule('0 6 * * *', async () => {
+            console.log('🌅 Starting daily self-income generation...');
             await this.performSelfIncomeGeneration();
         }, {
             scheduled: true,
             timezone: "Asia/Kolkata" // Indian timezone
         });
         
-        console.log('📅 Scheduled self-income generation at 12:00 PM (noon) daily');
+        console.log('📅 Scheduled self-income generation at 6:00 AM (morning) daily');
     }
 
     // Perform self-income generation
@@ -135,7 +135,7 @@ class SelfIncomeCronService {
         return {
             isRunning: this.isRunning,
             jobs: {
-                selfIncomeGeneration: '0 12 * * *' // 12:00 PM daily
+                selfIncomeGeneration: '0 6 * * *' // 6:00 AM daily
             },
             timezone: 'Asia/Kolkata'
         };

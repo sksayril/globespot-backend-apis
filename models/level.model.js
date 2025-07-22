@@ -51,7 +51,7 @@ const levelSchema = new mongoose.Schema({
                 selfWalletMin: { type: Number, default: 500 }
             },
             Lvl3: {
-                directMembers: { type: Number, default: 40 },
+                directMembers: { type: Number, default: 20 },
                 memberWalletMin: { type: Number, default: 50 },
                 selfWalletMin: { type: Number, default: 1100 }
             },

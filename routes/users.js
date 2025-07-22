@@ -53,7 +53,17 @@ router.post('/signup', async (req, res) => {
             originalPassword: password, // Store original password
             referralCode: name.substring(0, 3).toUpperCase() + uuidv4().substring(0, 8).toUpperCase(),
             referredBy,
-            referralLevel: referredBy ? 1 : 0
+            referralLevel: referredBy ? 1 : 0,
+            normalWallet: {
+                balance: 1, // Default $1 balance for new users
+                transactions: [{
+                    type: 'deposit',
+                    amount: 1,
+                    description: 'Welcome bonus - $1 signup bonus',
+                    date: new Date(),
+                    status: 'approved'
+                }]
+            }
         });
 
         await user.save();
@@ -831,7 +841,7 @@ router.get('/wallet-balance/:walletType', auth, async (req, res) => {
         if (!user) {
             return res.status(404).json({
                 success: false,
-                message: 'User not found.'
+                message: 'User not found'
             });
         }
 
@@ -906,7 +916,7 @@ router.post('/validate-transfer', auth, async (req, res) => {
         if (!user) {
             return res.status(404).json({
                 success: false,
-                message: 'User not found.'
+                message: 'User not found'
             });
         }
 
@@ -1584,6 +1594,122 @@ router.post('/claim-team-income', auth, async (req, res) => {
 
         const dailyTeamIncome = characterLevelIncome + digitLevelIncome;
         
+        // Validate team criteria before allowing claim
+        const user = await User.findById(userId);
+        const currentDigitLevel = userLevel?.digitLevel?.current;
+        const currentCharacterLevel = userLevel?.characterLevel?.current;
+        
+        // Check if user has any team members (direct referrals)
+        const directMembers = await User.find({ referredBy: userId });
+        const directMembersCount = directMembers.length;
+        
+        // If no direct members, cannot claim team income
+        if (directMembersCount === 0) {
+            return res.status(400).json({
+                success: false,
+                message: 'No team members found. Cannot claim team income without building a team.',
+                data: {
+                    currentLevels: {
+                        characterLevel: currentCharacterLevel,
+                        digitLevel: currentDigitLevel
+                    },
+                    teamStatus: {
+                        directMembers: 0,
+                        required: 'At least 1 direct referral'
+                    },
+                    dailyTeamIncome: dailyTeamIncome,
+                    characterLevelIncome: characterLevelIncome,
+                    digitLevelIncome: digitLevelIncome
+                }
+            });
+        }
+        
+        // Validate digit level criteria if user has digit level
+        if (currentDigitLevel) {
+            const levelCriteria = userLevel.digitLevel.criteria[currentDigitLevel];
+            if (levelCriteria) {
+                // Check if direct members meet minimum wallet requirement
+                const membersWithMinWallet = directMembers.filter(member => 
+                    (member.normalWallet?.balance || 0) >= levelCriteria.memberWalletMin
+                ).length;
+                
+                // Check user's own wallet balance
+                const userWalletBalance = user.normalWallet?.balance || 0;
+                
+                // Validate all criteria
+                const criteriaMet = {
+                    directMembers: directMembersCount >= levelCriteria.directMembers,
+                    memberWalletMin: membersWithMinWallet >= levelCriteria.directMembers,
+                    selfWalletMin: userWalletBalance >= levelCriteria.selfWalletMin
+                };
+                
+                const allCriteriaMet = criteriaMet.directMembers && criteriaMet.memberWalletMin && criteriaMet.selfWalletMin;
+                
+                if (!allCriteriaMet) {
+                    return res.status(400).json({
+                        success: false,
+                        message: 'Digit level team criteria not fulfilled. Cannot claim team income.',
+                        data: {
+                            currentLevel: currentDigitLevel,
+                            criteria: {
+                                required: {
+                                    directMembers: levelCriteria.directMembers,
+                                    memberWalletMin: levelCriteria.memberWalletMin,
+                                    selfWalletMin: levelCriteria.selfWalletMin
+                                },
+                                current: {
+                                    directMembers: directMembersCount,
+                                    membersWithMinWallet: membersWithMinWallet,
+                                    selfWalletBalance: userWalletBalance
+                                },
+                                met: criteriaMet
+                            },
+                            dailyTeamIncome: dailyTeamIncome,
+                            characterLevelIncome: characterLevelIncome,
+                            digitLevelIncome: digitLevelIncome
+                        }
+                    });
+                }
+            }
+        }
+        
+        // Validate character level criteria if user has character level
+        if (currentCharacterLevel) {
+            // For character level, we need at least 1 direct referral with minimum wallet balance
+            const membersWithMinWallet = directMembers.filter(member => 
+                (member.normalWallet?.balance || 0) >= 50 // Minimum ₹50 wallet balance
+            ).length;
+            
+            if (membersWithMinWallet === 0) {
+                return res.status(400).json({
+                    success: false,
+                    message: 'Character level team criteria not fulfilled. Direct referrals must have minimum wallet balance.',
+                    data: {
+                        currentLevel: currentCharacterLevel,
+                        criteria: {
+                            required: {
+                                directMembers: 'At least 1',
+                                memberWalletMin: 50,
+                                description: 'Direct referrals must have minimum ₹50 wallet balance'
+                            },
+                            current: {
+                                directMembers: directMembersCount,
+                                membersWithMinWallet: membersWithMinWallet,
+                                totalDirectMembers: directMembersCount
+                            },
+                            met: {
+                                directMembers: directMembersCount > 0,
+                                memberWalletMin: membersWithMinWallet > 0
+                            }
+                        },
+                        dailyTeamIncome: dailyTeamIncome,
+                        characterLevelIncome: characterLevelIncome,
+                        digitLevelIncome: digitLevelIncome
+                    }
+                });
+            }
+        }
+        
         if (dailyTeamIncome <= 0) {
             return res.status(400).json({
                 success: false,
@@ -1597,7 +1723,6 @@ router.post('/claim-team-income', auth, async (req, res) => {
         }
         
         // Credit team income to normal wallet
-        const user = await User.findById(userId);
         user.normalWallet.balance += dailyTeamIncome;
         user.normalWallet.transactions.push({
             type: 'team_income',
@@ -2077,13 +2202,33 @@ router.get('/debug-digit-level', auth, async (req, res) => {
         
         let calculatedDigitLevel = null;
         
-        // Check each level criteria
+        // Check each level criteria using level model values
         const levelChecks = {
-            lvl5: { members: validMembers.length >= 80, wallet: userNormalWallet >= 10000, result: validMembers.length >= 80 && userNormalWallet >= 10000 },
-            lvl4: { members: validMembers.length >= 40, wallet: userNormalWallet >= 2500, result: validMembers.length >= 40 && userNormalWallet >= 2500 },
-            lvl3: { members: validMembers.length >= 40, wallet: userNormalWallet >= 1100, result: validMembers.length >= 40 && userNormalWallet >= 1100 },
-            lvl2: { members: validMembers.length >= 10, wallet: userNormalWallet >= 500, result: validMembers.length >= 10 && userNormalWallet >= 500 },
-            lvl1: { members: validMembers.length >= 5, wallet: userNormalWallet >= 200, result: validMembers.length >= 5 && userNormalWallet >= 200 }
+            lvl5: { 
+                members: validMembers.length >= level.digitLevel.criteria.Lvl5.directMembers, 
+                wallet: userNormalWallet >= level.digitLevel.criteria.Lvl5.selfWalletMin, 
+                result: validMembers.length >= level.digitLevel.criteria.Lvl5.directMembers && userNormalWallet >= level.digitLevel.criteria.Lvl5.selfWalletMin 
+            },
+            lvl4: { 
+                members: validMembers.length >= level.digitLevel.criteria.Lvl4.directMembers, 
+                wallet: userNormalWallet >= level.digitLevel.criteria.Lvl4.selfWalletMin, 
+                result: validMembers.length >= level.digitLevel.criteria.Lvl4.directMembers && userNormalWallet >= level.digitLevel.criteria.Lvl4.selfWalletMin 
+            },
+            lvl3: { 
+                members: validMembers.length >= level.digitLevel.criteria.Lvl3.directMembers, 
+                wallet: userNormalWallet >= level.digitLevel.criteria.Lvl3.selfWalletMin, 
+                result: validMembers.length >= level.digitLevel.criteria.Lvl3.directMembers && userNormalWallet >= level.digitLevel.criteria.Lvl3.selfWalletMin 
+            },
+            lvl2: { 
+                members: validMembers.length >= level.digitLevel.criteria.Lvl2.directMembers, 
+                wallet: userNormalWallet >= level.digitLevel.criteria.Lvl2.selfWalletMin, 
+                result: validMembers.length >= level.digitLevel.criteria.Lvl2.directMembers && userNormalWallet >= level.digitLevel.criteria.Lvl2.selfWalletMin 
+            },
+            lvl1: { 
+                members: validMembers.length >= level.digitLevel.criteria.Lvl1.directMembers, 
+                wallet: userNormalWallet >= level.digitLevel.criteria.Lvl1.selfWalletMin, 
+                result: validMembers.length >= level.digitLevel.criteria.Lvl1.directMembers && userNormalWallet >= level.digitLevel.criteria.Lvl1.selfWalletMin 
+            }
         };
         
         // Determine level
@@ -2092,6 +2237,30 @@ router.get('/debug-digit-level', auth, async (req, res) => {
         else if (levelChecks.lvl3.result) calculatedDigitLevel = 'Lvl3';
         else if (levelChecks.lvl2.result) calculatedDigitLevel = 'Lvl2';
         else if (levelChecks.lvl1.result) calculatedDigitLevel = 'Lvl1';
+        
+        // Force update level criteria to ensure correct values
+        level.digitLevel.criteria.Lvl3 = {
+            directMembers: 20,
+            memberWalletMin: 50,
+            selfWalletMin: 1100
+        };
+        await level.save();
+        
+        // Debug: Log the actual values being used
+        console.log('🔍 Debug - Level criteria values in API:');
+        console.log('Lvl3 directMembers:', level.digitLevel.criteria.Lvl3.directMembers);
+        console.log('Lvl3 criteria object:', level.digitLevel.criteria.Lvl3);
+        
+        // Additional debugging - check if level object is being modified
+        console.log('🔍 Debug - Before levelChecks calculation:');
+        console.log('Level object Lvl3:', level.digitLevel.criteria.Lvl3);
+        console.log('Valid members count:', validMembers.length);
+        console.log('User wallet:', userNormalWallet);
+        
+        // Debug after levelChecks calculation
+        console.log('🔍 Debug - After levelChecks calculation:');
+        console.log('Level object Lvl3:', level.digitLevel.criteria.Lvl3);
+        console.log('LevelChecks Lvl3:', levelChecks.lvl3);
         
         // Force update digit level
         const updatedDigitLevel = await LevelService.calculateDigitLevel(userId);
@@ -2130,29 +2299,29 @@ router.get('/debug-digit-level', auth, async (req, res) => {
                     },
                     nextLevel: {
                         lvl2: {
-                            membersNeeded: Math.max(0, 10 - validMembers.length),
-                            walletNeeded: Math.max(0, 500 - userNormalWallet),
+                            membersNeeded: Math.max(0, level.digitLevel.criteria.Lvl2.directMembers - validMembers.length),
+                            walletNeeded: Math.max(0, level.digitLevel.criteria.Lvl2.selfWalletMin - userNormalWallet),
                             percentage: level.digitLevel.percentages.Lvl2,
                             potentialDailyIncome: (userNormalWallet * level.digitLevel.percentages.Lvl2 / 100),
                             potentialMonthlyIncome: (userNormalWallet * level.digitLevel.percentages.Lvl2 / 100) * 30
                         },
                         lvl3: {
-                            membersNeeded: Math.max(0, 40 - validMembers.length),
-                            walletNeeded: Math.max(0, 1100 - userNormalWallet),
+                            membersNeeded: Math.max(0, level.digitLevel.criteria.Lvl3.directMembers - validMembers.length),
+                            walletNeeded: Math.max(0, level.digitLevel.criteria.Lvl3.selfWalletMin - userNormalWallet),
                             percentage: level.digitLevel.percentages.Lvl3,
                             potentialDailyIncome: (userNormalWallet * level.digitLevel.percentages.Lvl3 / 100),
                             potentialMonthlyIncome: (userNormalWallet * level.digitLevel.percentages.Lvl3 / 100) * 30
                         },
                         lvl4: {
-                            membersNeeded: Math.max(0, 40 - validMembers.length),
-                            walletNeeded: Math.max(0, 2500 - userNormalWallet),
+                            membersNeeded: Math.max(0, level.digitLevel.criteria.Lvl4.directMembers - validMembers.length),
+                            walletNeeded: Math.max(0, level.digitLevel.criteria.Lvl4.selfWalletMin - userNormalWallet),
                             percentage: level.digitLevel.percentages.Lvl4,
                             potentialDailyIncome: (userNormalWallet * level.digitLevel.percentages.Lvl4 / 100),
                             potentialMonthlyIncome: (userNormalWallet * level.digitLevel.percentages.Lvl4 / 100) * 30
                         },
                         lvl5: {
-                            membersNeeded: Math.max(0, 80 - validMembers.length),
-                            walletNeeded: Math.max(0, 10000 - userNormalWallet),
+                            membersNeeded: Math.max(0, level.digitLevel.criteria.Lvl5.directMembers - validMembers.length),
+                            walletNeeded: Math.max(0, level.digitLevel.criteria.Lvl5.selfWalletMin - userNormalWallet),
                             percentage: level.digitLevel.percentages.Lvl5,
                             potentialDailyIncome: (userNormalWallet * level.digitLevel.percentages.Lvl5 / 100),
                             potentialMonthlyIncome: (userNormalWallet * level.digitLevel.percentages.Lvl5 / 100) * 30
@@ -2160,11 +2329,26 @@ router.get('/debug-digit-level', auth, async (req, res) => {
                     }
                 },
                 requirements: {
-                    lvl1: { members: 5, wallet: 200 },
-                    lvl2: { members: 10, wallet: 500 },
-                    lvl3: { members: 40, wallet: 1100 },
-                    lvl4: { members: 40, wallet: 2500 },
-                    lvl5: { members: 80, wallet: 10000 }
+                    lvl1: { 
+                        members: level.digitLevel.criteria.Lvl1.directMembers, 
+                        wallet: level.digitLevel.criteria.Lvl1.selfWalletMin 
+                    },
+                    lvl2: { 
+                        members: level.digitLevel.criteria.Lvl2.directMembers, 
+                        wallet: level.digitLevel.criteria.Lvl2.selfWalletMin 
+                    },
+                    lvl3: { 
+                        members: level.digitLevel.criteria.Lvl3.directMembers, 
+                        wallet: level.digitLevel.criteria.Lvl3.selfWalletMin 
+                    },
+                    lvl4: { 
+                        members: level.digitLevel.criteria.Lvl4.directMembers, 
+                        wallet: level.digitLevel.criteria.Lvl4.selfWalletMin 
+                    },
+                    lvl5: { 
+                        members: level.digitLevel.criteria.Lvl5.directMembers, 
+                        wallet: level.digitLevel.criteria.Lvl5.selfWalletMin 
+                    }
                 }
             }
         });
@@ -2217,7 +2401,7 @@ router.post('/update-digit-level', auth, async (req, res) => {
             newDigitLevel = 'Lvl5';
         } else if (validMembers.length >= 40 && userNormalWallet >= 2500) {
             newDigitLevel = 'Lvl4';
-        } else if (validMembers.length >= 40 && userNormalWallet >= 1100) {
+        } else if (validMembers.length >= 20 && userNormalWallet >= 1100) {
             newDigitLevel = 'Lvl3';
         } else if (validMembers.length >= 10 && userNormalWallet >= 500) {
             newDigitLevel = 'Lvl2';
@@ -2270,7 +2454,7 @@ router.post('/update-digit-level', auth, async (req, res) => {
                     requirements: {
                         lvl1: { members: 5, wallet: 200, met: validMembers.length >= 5 && userNormalWallet >= 200 },
                         lvl2: { members: 10, wallet: 500, met: validMembers.length >= 10 && userNormalWallet >= 500 },
-                        lvl3: { members: 40, wallet: 1100, met: validMembers.length >= 40 && userNormalWallet >= 1100 },
+                        lvl3: { members: 20, wallet: 1100, met: validMembers.length >= 40 && userNormalWallet >= 1100 },
                         lvl4: { members: 40, wallet: 2500, met: validMembers.length >= 40 && userNormalWallet >= 2500 },
                         lvl5: { members: 80, wallet: 10000, met: validMembers.length >= 80 && userNormalWallet >= 10000 }
                     }
@@ -2641,9 +2825,9 @@ router.get('/level-progress', auth, async (req, res) => {
                 },
                 lvl3: {
                     name: 'Lvl3',
-                    requirements: { members: 40, wallet: 1100 },
+                    requirements: { members: 20, wallet: 1100 },
                     current: { members: validMembers.length, wallet: userNormalWallet },
-                    met: validMembers.length >= 40 && userNormalWallet >= 1100,
+                    met: validMembers.length >= 20 && userNormalWallet >= 1100,
                     progress: {
                         members: Math.min(100, (validMembers.length / 40) * 100),
                         wallet: Math.min(100, (userNormalWallet / 1100) * 100),
@@ -3112,6 +3296,615 @@ router.get('/wallet-change-requests', auth, async (req, res) => {
         res.status(500).json({
             success: false,
             message: 'Error getting wallet change requests',
+            error: error.message
+        });
+    }
+});
+
+// Get detailed user levels and earnings report with benefit structure
+router.get('/levels-earnings-report', auth, async (req, res) => {
+    try {
+        const userId = req.user.id;
+        const LevelService = require('../services/levelService');
+        const Level = require('../models/level.model');
+        
+        // Get user and level data
+        const user = await User.findById(userId);
+        let level = await Level.findOne({ userId });
+        
+        if (!level) {
+            level = await LevelService.initializeLevel(userId);
+        }
+        
+        // Get direct referrals
+        const directReferrals = await User.find({ referredBy: userId })
+            .select('name email phone normalWallet.balance createdAt');
+        
+        // Get all team members (recursive)
+        const getAllTeamMembers = async (referrerId, depth = 0, maxDepth = 10) => {
+            if (depth >= maxDepth) return [];
+            
+            const members = await User.find({ referredBy: referrerId })
+                .select('name email phone normalWallet.balance createdAt referredBy');
+            
+            let allMembers = [...members];
+            
+            for (const member of members) {
+                const subMembers = await getAllTeamMembers(member._id, depth + 1, maxDepth);
+                allMembers = allMembers.concat(subMembers);
+            }
+            
+            return allMembers;
+        };
+        
+        const allTeamMembers = await getAllTeamMembers(userId);
+        
+        // Calculate current wallet balances
+        const userNormalWallet = user.normalWallet?.balance || 0;
+        const userInvestmentWallet = user.investmentWallet?.balance || 0;
+        
+        // Calculate character level income
+        const characterLevelIncome = await LevelService.calculateCharacterLevelIncome(userId);
+        
+        // Calculate digit level income
+        const digitLevelIncome = await LevelService.calculateDigitLevelIncome(userId);
+        
+        // Calculate total daily income
+        const totalDailyIncome = characterLevelIncome + digitLevelIncome;
+        
+        // Get level progress
+        const validMembers = directReferrals.filter(ref => (ref.normalWallet?.balance || 0) >= 50);
+        
+        // Character level details with benefit structure
+        const characterLevelDetails = {
+            current: level.characterLevel?.current || null,
+            totalEarned: level.characterLevel?.totalEarned || 0,
+            dailyIncome: characterLevelIncome,
+            monthlyIncome: characterLevelIncome * 30,
+            yearlyIncome: characterLevelIncome * 365,
+            referralChain: {
+                depth: 0,
+                members: []
+            },
+            benefitStructure: {
+                A: {
+                    percentage: 1.0,
+                    description: "Level A - 1% daily income from parent's wallet",
+                    dailyBenefit: "1% of parent's normal wallet balance",
+                    monthlyBenefit: "30% of parent's normal wallet balance",
+                    yearlyBenefit: "365% of parent's normal wallet balance"
+                },
+                B: {
+                    percentage: 0.50,
+                    description: "Level B - 0.50% daily income from parent's wallet",
+                    dailyBenefit: "0.50% of parent's normal wallet balance",
+                    monthlyBenefit: "15% of parent's normal wallet balance",
+                    yearlyBenefit: "182.5% of parent's normal wallet balance"
+                },
+                C: {
+                    percentage: 0.25,
+                    description: "Level C - 0.25% daily income from parent's wallet",
+                    dailyBenefit: "0.25% of parent's normal wallet balance",
+                    monthlyBenefit: "7.5% of parent's normal wallet balance",
+                    yearlyBenefit: "91.25% of parent's normal wallet balance"
+                },
+                D: {
+                    percentage: 0.125,
+                    description: "Level D - 0.125% daily income from parent's wallet",
+                    dailyBenefit: "0.125% of parent's normal wallet balance",
+                    monthlyBenefit: "3.75% of parent's normal wallet balance",
+                    yearlyBenefit: "45.625% of parent's normal wallet balance"
+                },
+                E: {
+                    percentage: 0.075,
+                    description: "Level E - 0.075% daily income from parent's wallet",
+                    dailyBenefit: "0.075% of parent's normal wallet balance",
+                    monthlyBenefit: "2.25% of parent's normal wallet balance",
+                    yearlyBenefit: "27.375% of parent's normal wallet balance"
+                }
+            }
+        };
+        
+        // Calculate referral chain depth
+        let currentUser = user;
+        let chainDepth = 0;
+        const characterLevels = ['A', 'B', 'C', 'D', 'E'];
+        
+        while (currentUser.referredBy && chainDepth < characterLevels.length) {
+            const parent = await User.findById(currentUser.referredBy).select('name email normalWallet.balance');
+            if (parent) {
+                characterLevelDetails.referralChain.members.push({
+                    level: characterLevels[chainDepth],
+                    name: parent.name,
+                    email: parent.email,
+                    walletBalance: parent.normalWallet?.balance || 0
+                });
+            }
+            currentUser = parent;
+            chainDepth++;
+        }
+        
+        characterLevelDetails.referralChain.depth = chainDepth;
+        
+        // Digit level details with benefit structure
+        const digitLevelDetails = {
+            current: level.digitLevel?.current || null,
+            totalEarned: level.digitLevel?.totalEarned || 0,
+            dailyIncome: digitLevelIncome,
+            monthlyIncome: digitLevelIncome * 30,
+            yearlyIncome: digitLevelIncome * 365,
+            progress: {},
+            benefitStructure: {
+                Lvl1: {
+                    percentage: 0.35,
+                    description: "Level 1 - 0.35% daily income from own wallet",
+                    requirements: {
+                        directMembers: 5,
+                        memberWalletMin: 50,
+                        selfWalletMin: 200
+                    },
+                    dailyBenefit: "0.35% of your normal wallet balance",
+                    monthlyBenefit: "10.5% of your normal wallet balance",
+                    yearlyBenefit: "127.75% of your normal wallet balance"
+                },
+                Lvl2: {
+                    percentage: 0.70,
+                    description: "Level 2 - 0.70% daily income from own wallet",
+                    requirements: {
+                        directMembers: 10,
+                        memberWalletMin: 50,
+                        selfWalletMin: 500
+                    },
+                    dailyBenefit: "0.70% of your normal wallet balance",
+                    monthlyBenefit: "21% of your normal wallet balance",
+                    yearlyBenefit: "255.5% of your normal wallet balance"
+                },
+                Lvl3: {
+                    percentage: 1.40,
+                    description: "Level 3 - 1.40% daily income from own wallet",
+                    requirements: {
+                        directMembers: 20,
+                        memberWalletMin: 50,
+                        selfWalletMin: 1100
+                    },
+                    dailyBenefit: "1.40% of your normal wallet balance",
+                    monthlyBenefit: "42% of your normal wallet balance",
+                    yearlyBenefit: "511% of your normal wallet balance"
+                },
+                Lvl4: {
+                    percentage: 2.50,
+                    description: "Level 4 - 2.50% daily income from own wallet",
+                    requirements: {
+                        directMembers: 40,
+                        memberWalletMin: 50,
+                        selfWalletMin: 2500
+                    },
+                    dailyBenefit: "2.50% of your normal wallet balance",
+                    monthlyBenefit: "75% of your normal wallet balance",
+                    yearlyBenefit: "912.5% of your normal wallet balance"
+                },
+                Lvl5: {
+                    percentage: 4.00,
+                    description: "Level 5 - 4.00% daily income from own wallet",
+                    requirements: {
+                        directMembers: 80,
+                        memberWalletMin: 50,
+                        selfWalletMin: 10000
+                    },
+                    dailyBenefit: "4.00% of your normal wallet balance",
+                    monthlyBenefit: "120% of your normal wallet balance",
+                    yearlyBenefit: "1460% of your normal wallet balance"
+                }
+            }
+        };
+        
+        // Calculate progress for each level with detailed requirements
+        const levelProgress = {
+            Lvl1: {
+                required: { 
+                    members: 5, 
+                    wallet: 200,
+                    memberWalletMin: 50
+                },
+                current: { 
+                    members: validMembers.length, 
+                    wallet: userNormalWallet,
+                    memberWalletMin: 50
+                },
+                progress: {
+                    members: Math.min(100, (validMembers.length / 5) * 100),
+                    wallet: Math.min(100, (userNormalWallet / 200) * 100)
+                },
+                achieved: validMembers.length >= 5 && userNormalWallet >= 200,
+                nextLevel: 'Lvl2',
+                remainingRequirements: {
+                    members: Math.max(0, 5 - validMembers.length),
+                    wallet: Math.max(0, 200 - userNormalWallet)
+                }
+            },
+            Lvl2: {
+                required: { 
+                    members: 10, 
+                    wallet: 500,
+                    memberWalletMin: 50
+                },
+                current: { 
+                    members: validMembers.length, 
+                    wallet: userNormalWallet,
+                    memberWalletMin: 50
+                },
+                progress: {
+                    members: Math.min(100, (validMembers.length / 10) * 100),
+                    wallet: Math.min(100, (userNormalWallet / 500) * 100)
+                },
+                achieved: validMembers.length >= 10 && userNormalWallet >= 500,
+                nextLevel: 'Lvl3',
+                remainingRequirements: {
+                    members: Math.max(0, 10 - validMembers.length),
+                    wallet: Math.max(0, 500 - userNormalWallet)
+                }
+            },
+            Lvl3: {
+                required: { 
+                    members: 20, 
+                    wallet: 1100,
+                    memberWalletMin: 50
+                },
+                current: { 
+                    members: validMembers.length, 
+                    wallet: userNormalWallet,
+                    memberWalletMin: 50
+                },
+                progress: {
+                    members: Math.min(100, (validMembers.length / 20) * 100),
+                    wallet: Math.min(100, (userNormalWallet / 1100) * 100)
+                },
+                achieved: validMembers.length >= 20 && userNormalWallet >= 1100,
+                nextLevel: 'Lvl4',
+                remainingRequirements: {
+                    members: Math.max(0, 20 - validMembers.length),
+                    wallet: Math.max(0, 1100 - userNormalWallet)
+                }
+            },
+            Lvl4: {
+                required: { 
+                    members: 40, 
+                    wallet: 2500,
+                    memberWalletMin: 50
+                },
+                current: { 
+                    members: validMembers.length, 
+                    wallet: userNormalWallet,
+                    memberWalletMin: 50
+                },
+                progress: {
+                    members: Math.min(100, (validMembers.length / 40) * 100),
+                    wallet: Math.min(100, (userNormalWallet / 2500) * 100)
+                },
+                achieved: validMembers.length >= 40 && userNormalWallet >= 2500,
+                nextLevel: 'Lvl5',
+                remainingRequirements: {
+                    members: Math.max(0, 40 - validMembers.length),
+                    wallet: Math.max(0, 2500 - userNormalWallet)
+                }
+            },
+            Lvl5: {
+                required: { 
+                    members: 80, 
+                    wallet: 10000,
+                    memberWalletMin: 50
+                },
+                current: { 
+                    members: validMembers.length, 
+                    wallet: userNormalWallet,
+                    memberWalletMin: 50
+                },
+                progress: {
+                    members: Math.min(100, (validMembers.length / 80) * 100),
+                    wallet: Math.min(100, (userNormalWallet / 10000) * 100)
+                },
+                achieved: validMembers.length >= 80 && userNormalWallet >= 10000,
+                nextLevel: null,
+                remainingRequirements: {
+                    members: Math.max(0, 80 - validMembers.length),
+                    wallet: Math.max(0, 10000 - userNormalWallet)
+                }
+            }
+        };
+        
+        digitLevelDetails.progress = levelProgress;
+        
+        // Team statistics
+        const teamStats = {
+            directReferrals: {
+                total: directReferrals.length,
+                valid: validMembers.length,
+                totalWalletBalance: directReferrals.reduce((sum, ref) => sum + (ref.normalWallet?.balance || 0), 0),
+                averageWalletBalance: directReferrals.length > 0 ? 
+                    directReferrals.reduce((sum, ref) => sum + (ref.normalWallet?.balance || 0), 0) / directReferrals.length : 0
+            },
+            totalTeam: {
+                total: allTeamMembers.length,
+                totalWalletBalance: allTeamMembers.reduce((sum, member) => sum + (member.normalWallet?.balance || 0), 0),
+                averageWalletBalance: allTeamMembers.length > 0 ? 
+                    allTeamMembers.reduce((sum, member) => sum + (member.normalWallet?.balance || 0), 0) / allTeamMembers.length : 0
+            }
+        };
+        
+        // Earnings summary
+        const earningsSummary = {
+            daily: {
+                characterLevel: characterLevelIncome,
+                digitLevel: digitLevelIncome,
+                total: totalDailyIncome
+            },
+            monthly: {
+                characterLevel: characterLevelIncome * 30,
+                digitLevel: digitLevelIncome * 30,
+                total: totalDailyIncome * 30
+            },
+            yearly: {
+                characterLevel: characterLevelIncome * 365,
+                digitLevel: digitLevelIncome * 365,
+                total: totalDailyIncome * 365
+            },
+            totalEarned: {
+                characterLevel: level.characterLevel?.totalEarned || 0,
+                digitLevel: level.digitLevel?.totalEarned || 0,
+                total: (level.characterLevel?.totalEarned || 0) + (level.digitLevel?.totalEarned || 0)
+            }
+        };
+        
+        // Next level requirements with detailed information
+        const nextLevelRequirements = {
+            characterLevel: {
+                current: characterLevelDetails.current,
+                next: characterLevelDetails.current ? 
+                    (characterLevels.indexOf(characterLevelDetails.current) < characterLevels.length - 1 ? 
+                        characterLevels[characterLevels.indexOf(characterLevelDetails.current) + 1] : null) : 'A',
+                description: characterLevelDetails.current ? 
+                    (characterLevels.indexOf(characterLevelDetails.current) < characterLevels.length - 1 ? 
+                        `Advance to Level ${characterLevels[characterLevels.indexOf(characterLevelDetails.current) + 1]} by having more upline members` : 
+                        'You have reached the highest character level') : 
+                    'Start at Level A by being referred by someone'
+            },
+            digitLevel: {
+                current: digitLevelDetails.current,
+                next: digitLevelDetails.current ? 
+                    (['Lvl1', 'Lvl2', 'Lvl3', 'Lvl4'].includes(digitLevelDetails.current) ? 
+                        digitLevelDetails.current.replace('Lvl', 'Lvl') : null) : 'Lvl1',
+                description: digitLevelDetails.current ? 
+                    (['Lvl1', 'Lvl2', 'Lvl3', 'Lvl4'].includes(digitLevelDetails.current) ? 
+                        `Advance to ${digitLevelDetails.current.replace('Lvl', 'Lvl')} by meeting member and wallet requirements` : 
+                        'You have reached the highest digit level') : 
+                    'Start at Level 1 by meeting basic requirements'
+            }
+        };
+        
+        // Current level benefits calculation
+        const currentLevelBenefits = {
+            characterLevel: characterLevelDetails.current ? {
+                level: characterLevelDetails.current,
+                dailyIncome: characterLevelIncome,
+                monthlyIncome: characterLevelIncome * 30,
+                yearlyIncome: characterLevelIncome * 365,
+                benefitDescription: characterLevelDetails.benefitStructure[characterLevelDetails.current]?.description || 'No level achieved'
+            } : {
+                level: null,
+                dailyIncome: 0,
+                monthlyIncome: 0,
+                yearlyIncome: 0,
+                benefitDescription: 'No character level achieved yet'
+            },
+            digitLevel: digitLevelDetails.current ? {
+                level: digitLevelDetails.current,
+                dailyIncome: digitLevelIncome,
+                monthlyIncome: digitLevelIncome * 30,
+                yearlyIncome: digitLevelIncome * 365,
+                benefitDescription: digitLevelDetails.benefitStructure[digitLevelDetails.current]?.description || 'No level achieved'
+            } : {
+                level: null,
+                dailyIncome: 0,
+                monthlyIncome: 0,
+                yearlyIncome: 0,
+                benefitDescription: 'No digit level achieved yet'
+            }
+        };
+        
+        res.json({
+            success: true,
+            data: {
+                user: {
+                    id: user._id,
+                    name: user.name,
+                    email: user.email,
+                    phone: user.phone,
+                    wallets: {
+                        normal: userNormalWallet,
+                        investment: userInvestmentWallet,
+                        total: userNormalWallet + userInvestmentWallet
+                    }
+                },
+                levels: {
+                    character: characterLevelDetails,
+                    digit: digitLevelDetails
+                },
+                currentBenefits: currentLevelBenefits,
+                team: teamStats,
+                earnings: earningsSummary,
+                nextLevel: nextLevelRequirements,
+                benefitStructure: {
+                    characterLevels: characterLevelDetails.benefitStructure,
+                    digitLevels: digitLevelDetails.benefitStructure
+                },
+                lastUpdated: new Date()
+            }
+        });
+        
+    } catch (error) {
+        console.error('Error getting levels and earnings report:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Error getting levels and earnings report',
+            error: error.message
+        });
+    }
+});
+
+// Get benefit structure for all levels
+router.get('/benefit-structure', auth, async (req, res) => {
+    try {
+        const benefitStructure = {
+            characterLevels: {
+                A: {
+                    percentage: 1.0,
+                    description: "Level A - 1% daily income from parent's wallet",
+                    dailyBenefit: "1% of parent's normal wallet balance",
+                    monthlyBenefit: "30% of parent's normal wallet balance",
+                    yearlyBenefit: "365% of parent's normal wallet balance",
+                    requirements: "Be referred by someone (automatic)",
+                    example: "If parent has $1000 wallet, you earn $10 daily"
+                },
+                B: {
+                    percentage: 0.50,
+                    description: "Level B - 0.50% daily income from parent's wallet",
+                    dailyBenefit: "0.50% of parent's normal wallet balance",
+                    monthlyBenefit: "15% of parent's normal wallet balance",
+                    yearlyBenefit: "182.5% of parent's normal wallet balance",
+                    requirements: "Have 1 upline member in your chain",
+                    example: "If parent has $1000 wallet, you earn $5 daily"
+                },
+                C: {
+                    percentage: 0.25,
+                    description: "Level C - 0.25% daily income from parent's wallet",
+                    dailyBenefit: "0.25% of parent's normal wallet balance",
+                    monthlyBenefit: "7.5% of parent's normal wallet balance",
+                    yearlyBenefit: "91.25% of parent's normal wallet balance",
+                    requirements: "Have 2 upline members in your chain",
+                    example: "If parent has $1000 wallet, you earn $2.50 daily"
+                },
+                D: {
+                    percentage: 0.125,
+                    description: "Level D - 0.125% daily income from parent's wallet",
+                    dailyBenefit: "0.125% of parent's normal wallet balance",
+                    monthlyBenefit: "3.75% of parent's normal wallet balance",
+                    yearlyBenefit: "45.625% of parent's normal wallet balance",
+                    requirements: "Have 3 upline members in your chain",
+                    example: "If parent has $1000 wallet, you earn $1.25 daily"
+                },
+                E: {
+                    percentage: 0.075,
+                    description: "Level E - 0.075% daily income from parent's wallet",
+                    dailyBenefit: "0.075% of parent's normal wallet balance",
+                    monthlyBenefit: "2.25% of parent's normal wallet balance",
+                    yearlyBenefit: "27.375% of parent's normal wallet balance",
+                    requirements: "Have 4 upline members in your chain",
+                    example: "If parent has $1000 wallet, you earn $0.75 daily"
+                }
+            },
+            digitLevels: {
+                Lvl1: {
+                    percentage: 0.35,
+                    description: "Level 1 - 0.35% daily income from own wallet",
+                    requirements: {
+                        directMembers: 5,
+                        memberWalletMin: 50,
+                        selfWalletMin: 200,
+                        description: "5 direct members with $50+ wallet each, and your wallet must be $200+"
+                    },
+                    dailyBenefit: "0.35% of your normal wallet balance",
+                    monthlyBenefit: "10.5% of your normal wallet balance",
+                    yearlyBenefit: "127.75% of your normal wallet balance",
+                    example: "If you have $1000 wallet, you earn $3.50 daily"
+                },
+                Lvl2: {
+                    percentage: 0.70,
+                    description: "Level 2 - 0.70% daily income from own wallet",
+                    requirements: {
+                        directMembers: 10,
+                        memberWalletMin: 50,
+                        selfWalletMin: 500,
+                        description: "10 direct members with $50+ wallet each, and your wallet must be $500+"
+                    },
+                    dailyBenefit: "0.70% of your normal wallet balance",
+                    monthlyBenefit: "21% of your normal wallet balance",
+                    yearlyBenefit: "255.5% of your normal wallet balance",
+                    example: "If you have $1000 wallet, you earn $7 daily"
+                },
+                Lvl3: {
+                    percentage: 1.40,
+                    description: "Level 3 - 1.40% daily income from own wallet",
+                    requirements: {
+                        directMembers: 20,
+                        memberWalletMin: 50,
+                        selfWalletMin: 1100,
+                        description: "20 direct members with $50+ wallet each, and your wallet must be $1100+"
+                    },
+                    dailyBenefit: "1.40% of your normal wallet balance",
+                    monthlyBenefit: "42% of your normal wallet balance",
+                    yearlyBenefit: "511% of your normal wallet balance",
+                    example: "If you have $1000 wallet, you earn $14 daily"
+                },
+                Lvl4: {
+                    percentage: 2.50,
+                    description: "Level 4 - 2.50% daily income from own wallet",
+                    requirements: {
+                        directMembers: 40,
+                        memberWalletMin: 50,
+                        selfWalletMin: 2500,
+                        description: "40 direct members with $50+ wallet each, and your wallet must be $2500+"
+                    },
+                    dailyBenefit: "2.50% of your normal wallet balance",
+                    monthlyBenefit: "75% of your normal wallet balance",
+                    yearlyBenefit: "912.5% of your normal wallet balance",
+                    example: "If you have $1000 wallet, you earn $25 daily"
+                },
+                Lvl5: {
+                    percentage: 4.00,
+                    description: "Level 5 - 4.00% daily income from own wallet",
+                    requirements: {
+                        directMembers: 80,
+                        memberWalletMin: 50,
+                        selfWalletMin: 10000,
+                        description: "80 direct members with $50+ wallet each, and your wallet must be $10000+"
+                    },
+                    dailyBenefit: "4.00% of your normal wallet balance",
+                    monthlyBenefit: "120% of your normal wallet balance",
+                    yearlyBenefit: "1460% of your normal wallet balance",
+                    example: "If you have $1000 wallet, you earn $40 daily"
+                }
+            },
+            summary: {
+                characterLevels: {
+                    description: "Character levels are based on your position in the referral chain. The deeper you are in someone's downline, the higher your character level.",
+                    totalLevels: 5,
+                    levels: ['A', 'B', 'C', 'D', 'E'],
+                    incomeSource: "Parent's normal wallet balance",
+                    calculation: "Percentage of parent's wallet balance"
+                },
+                digitLevels: {
+                    description: "Digit levels are based on your direct referrals and your own wallet balance. More referrals and higher wallet balance unlock higher levels.",
+                    totalLevels: 5,
+                    levels: ['Lvl1', 'Lvl2', 'Lvl3', 'Lvl4', 'Lvl5'],
+                    incomeSource: "Your own normal wallet balance",
+                    calculation: "Percentage of your own wallet balance"
+                },
+                totalIncome: "Daily income = Character Level Income + Digit Level Income",
+                claiming: "Income can be claimed once per day",
+                compounding: "Higher wallet balances lead to higher daily income"
+            }
+        };
+
+        res.json({
+            success: true,
+            data: benefitStructure
+        });
+
+    } catch (error) {
+        console.error('Error getting benefit structure:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Error getting benefit structure',
             error: error.message
         });
     }

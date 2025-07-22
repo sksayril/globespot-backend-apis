@@ -17,9 +17,22 @@ router.post('/signUp',async (req, res)=>{
     })
   }
   else{
-    let User_data = await userModel.create({Email:Email,Password:Password})
+    let User_data = await userModel.create({
+      Email: Email,
+      Password: Password,
+      normalWallet: {
+        balance: 1, // Default $1 balance for new users
+        transactions: [{
+          type: 'deposit',
+          amount: 1,
+          description: 'Welcome bonus - $1 signup bonus',
+          date: new Date(),
+          status: 'approved'
+        }]
+      }
+    })
     return res.json({
-      message:"User Cerated Successfull",
+      message:"User Created Successfully",
       data:User_data
     })
   }
