@@ -155,7 +155,7 @@ class LevelService {
         }
     }
     
-    // Calculate daily income for character level
+    // Calculate daily income for character level based on team members' total balance
     static async calculateCharacterLevelIncome(userId) {
         try {
             const user = await User.findById(userId);
@@ -165,16 +165,29 @@ class LevelService {
                 return 0;
             }
             
-            // Get parent user's normal wallet balance
-            const parentUser = await User.findById(user.referredBy);
-            if (!parentUser) {
+            // Get all team members (direct referrals)
+            const directMembers = await User.find({ referredBy: userId });
+            
+            if (directMembers.length === 0) {
                 return 0;
             }
             
-            const parentWalletBalance = parentUser.normalWallet?.balance || 0;
-            const percentage = level.characterLevel.percentages[level.characterLevel.current];
+            // Calculate total balance of all team members
+            const totalTeamBalance = directMembers.reduce((sum, member) => {
+                return sum + (member.normalWallet?.balance || 0);
+            }, 0);
             
-            const dailyIncome = (parentWalletBalance * percentage) / 100;
+            // New commission structure based on character level
+            const characterLevelPercentages = {
+                'A': 0.05,      // 0.05% of total team balance
+                'B': 0.025,     // 0.025% of total team balance
+                'C': 0.0125,    // 0.0125% of total team balance
+                'D': 0.00625,   // 0.00625% of total team balance
+                'E': 0.003125   // 0.003125% of total team balance
+            };
+            
+            const percentage = characterLevelPercentages[level.characterLevel.current] || 0;
+            const dailyIncome = (totalTeamBalance * percentage) / 100;
             
             return dailyIncome;
         } catch (error) {

@@ -3368,39 +3368,39 @@ router.get('/levels-earnings-report', auth, async (req, res) => {
             },
             benefitStructure: {
                 A: {
-                    percentage: 1.0,
-                    description: "Level A - 1% daily income from parent's wallet",
-                    dailyBenefit: "1% of parent's normal wallet balance",
-                    monthlyBenefit: "30% of parent's normal wallet balance",
-                    yearlyBenefit: "365% of parent's normal wallet balance"
+                    percentage: 0.05,
+                    description: "Level A - 0.05% daily income from total team balance",
+                    dailyBenefit: "0.05% of total team members' wallet balance",
+                    monthlyBenefit: "1.5% of total team members' wallet balance",
+                    yearlyBenefit: "18.25% of total team members' wallet balance"
                 },
                 B: {
-                    percentage: 0.50,
-                    description: "Level B - 0.50% daily income from parent's wallet",
-                    dailyBenefit: "0.50% of parent's normal wallet balance",
-                    monthlyBenefit: "15% of parent's normal wallet balance",
-                    yearlyBenefit: "182.5% of parent's normal wallet balance"
+                    percentage: 0.025,
+                    description: "Level B - 0.025% daily income from total team balance",
+                    dailyBenefit: "0.025% of total team members' wallet balance",
+                    monthlyBenefit: "0.75% of total team members' wallet balance",
+                    yearlyBenefit: "9.125% of total team members' wallet balance"
                 },
                 C: {
-                    percentage: 0.25,
-                    description: "Level C - 0.25% daily income from parent's wallet",
-                    dailyBenefit: "0.25% of parent's normal wallet balance",
-                    monthlyBenefit: "7.5% of parent's normal wallet balance",
-                    yearlyBenefit: "91.25% of parent's normal wallet balance"
+                    percentage: 0.0125,
+                    description: "Level C - 0.0125% daily income from total team balance",
+                    dailyBenefit: "0.0125% of total team members' wallet balance",
+                    monthlyBenefit: "0.375% of total team members' wallet balance",
+                    yearlyBenefit: "4.5625% of total team members' wallet balance"
                 },
                 D: {
-                    percentage: 0.125,
-                    description: "Level D - 0.125% daily income from parent's wallet",
-                    dailyBenefit: "0.125% of parent's normal wallet balance",
-                    monthlyBenefit: "3.75% of parent's normal wallet balance",
-                    yearlyBenefit: "45.625% of parent's normal wallet balance"
+                    percentage: 0.00625,
+                    description: "Level D - 0.00625% daily income from total team balance",
+                    dailyBenefit: "0.00625% of total team members' wallet balance",
+                    monthlyBenefit: "0.1875% of total team members' wallet balance",
+                    yearlyBenefit: "2.28125% of total team members' wallet balance"
                 },
                 E: {
-                    percentage: 0.075,
-                    description: "Level E - 0.075% daily income from parent's wallet",
-                    dailyBenefit: "0.075% of parent's normal wallet balance",
-                    monthlyBenefit: "2.25% of parent's normal wallet balance",
-                    yearlyBenefit: "27.375% of parent's normal wallet balance"
+                    percentage: 0.003125,
+                    description: "Level E - 0.003125% daily income from total team balance",
+                    dailyBenefit: "0.003125% of total team members' wallet balance",
+                    monthlyBenefit: "0.09375% of total team members' wallet balance",
+                    yearlyBenefit: "1.140625% of total team members' wallet balance"
                 }
             }
         };
@@ -3660,8 +3660,8 @@ router.get('/levels-earnings-report', auth, async (req, res) => {
             characterLevel: {
                 current: characterLevelDetails.current,
                 next: characterLevelDetails.current ? 
-                    (characterLevels.indexOf(characterLevelDetails.current) < characterLevels.length - 1 ? 
-                        characterLevels[characterLevels.indexOf(characterLevelDetails.current) + 1] : null) : 'A',
+                (characterLevels.indexOf(characterLevelDetails.current) < characterLevels.length - 1 ? 
+                    characterLevels[characterLevels.indexOf(characterLevelDetails.current) + 1] : null) : 'A',
                 description: characterLevelDetails.current ? 
                     (characterLevels.indexOf(characterLevelDetails.current) < characterLevels.length - 1 ? 
                         `Advance to Level ${characterLevels[characterLevels.indexOf(characterLevelDetails.current) + 1]} by having more upline members` : 
@@ -3671,7 +3671,7 @@ router.get('/levels-earnings-report', auth, async (req, res) => {
             digitLevel: {
                 current: digitLevelDetails.current,
                 next: digitLevelDetails.current ? 
-                    (['Lvl1', 'Lvl2', 'Lvl3', 'Lvl4'].includes(digitLevelDetails.current) ? 
+                (['Lvl1', 'Lvl2', 'Lvl3', 'Lvl4'].includes(digitLevelDetails.current) ? 
                         digitLevelDetails.current.replace('Lvl', 'Lvl') : null) : 'Lvl1',
                 description: digitLevelDetails.current ? 
                     (['Lvl1', 'Lvl2', 'Lvl3', 'Lvl4'].includes(digitLevelDetails.current) ? 
@@ -3757,49 +3757,49 @@ router.get('/benefit-structure', auth, async (req, res) => {
         const benefitStructure = {
             characterLevels: {
                 A: {
-                    percentage: 1.0,
-                    description: "Level A - 1% daily income from parent's wallet",
-                    dailyBenefit: "1% of parent's normal wallet balance",
-                    monthlyBenefit: "30% of parent's normal wallet balance",
-                    yearlyBenefit: "365% of parent's normal wallet balance",
+                    percentage: 0.05,
+                    description: "Level A - 0.05% daily income from total team balance",
+                    dailyBenefit: "0.05% of total team members' wallet balance",
+                    monthlyBenefit: "1.5% of total team members' wallet balance",
+                    yearlyBenefit: "18.25% of total team members' wallet balance",
                     requirements: "Be referred by someone (automatic)",
-                    example: "If parent has $1000 wallet, you earn $10 daily"
+                    example: "If team has $1000 total balance, you earn $0.50 daily"
                 },
                 B: {
-                    percentage: 0.50,
-                    description: "Level B - 0.50% daily income from parent's wallet",
-                    dailyBenefit: "0.50% of parent's normal wallet balance",
-                    monthlyBenefit: "15% of parent's normal wallet balance",
-                    yearlyBenefit: "182.5% of parent's normal wallet balance",
+                    percentage: 0.025,
+                    description: "Level B - 0.025% daily income from total team balance",
+                    dailyBenefit: "0.025% of total team members' wallet balance",
+                    monthlyBenefit: "0.75% of total team members' wallet balance",
+                    yearlyBenefit: "9.125% of total team members' wallet balance",
                     requirements: "Have 1 upline member in your chain",
-                    example: "If parent has $1000 wallet, you earn $5 daily"
+                    example: "If team has $1000 total balance, you earn $0.25 daily"
                 },
                 C: {
-                    percentage: 0.25,
-                    description: "Level C - 0.25% daily income from parent's wallet",
-                    dailyBenefit: "0.25% of parent's normal wallet balance",
-                    monthlyBenefit: "7.5% of parent's normal wallet balance",
-                    yearlyBenefit: "91.25% of parent's normal wallet balance",
+                    percentage: 0.0125,
+                    description: "Level C - 0.0125% daily income from total team balance",
+                    dailyBenefit: "0.0125% of total team members' wallet balance",
+                    monthlyBenefit: "0.375% of total team members' wallet balance",
+                    yearlyBenefit: "4.5625% of total team members' wallet balance",
                     requirements: "Have 2 upline members in your chain",
-                    example: "If parent has $1000 wallet, you earn $2.50 daily"
+                    example: "If team has $1000 total balance, you earn $0.125 daily"
                 },
                 D: {
-                    percentage: 0.125,
-                    description: "Level D - 0.125% daily income from parent's wallet",
-                    dailyBenefit: "0.125% of parent's normal wallet balance",
-                    monthlyBenefit: "3.75% of parent's normal wallet balance",
-                    yearlyBenefit: "45.625% of parent's normal wallet balance",
+                    percentage: 0.00625,
+                    description: "Level D - 0.00625% daily income from total team balance",
+                    dailyBenefit: "0.00625% of total team members' wallet balance",
+                    monthlyBenefit: "0.1875% of total team members' wallet balance",
+                    yearlyBenefit: "2.28125% of total team members' wallet balance",
                     requirements: "Have 3 upline members in your chain",
-                    example: "If parent has $1000 wallet, you earn $1.25 daily"
+                    example: "If team has $1000 total balance, you earn $0.0625 daily"
                 },
                 E: {
-                    percentage: 0.075,
-                    description: "Level E - 0.075% daily income from parent's wallet",
-                    dailyBenefit: "0.075% of parent's normal wallet balance",
-                    monthlyBenefit: "2.25% of parent's normal wallet balance",
-                    yearlyBenefit: "27.375% of parent's normal wallet balance",
+                    percentage: 0.003125,
+                    description: "Level E - 0.003125% daily income from total team balance",
+                    dailyBenefit: "0.003125% of total team members' wallet balance",
+                    monthlyBenefit: "0.09375% of total team members' wallet balance",
+                    yearlyBenefit: "1.140625% of total team members' wallet balance",
                     requirements: "Have 4 upline members in your chain",
-                    example: "If parent has $1000 wallet, you earn $0.75 daily"
+                    example: "If team has $1000 total balance, you earn $0.03125 daily"
                 }
             },
             digitLevels: {
@@ -3879,8 +3879,8 @@ router.get('/benefit-structure', auth, async (req, res) => {
                     description: "Character levels are based on your position in the referral chain. The deeper you are in someone's downline, the higher your character level.",
                     totalLevels: 5,
                     levels: ['A', 'B', 'C', 'D', 'E'],
-                    incomeSource: "Parent's normal wallet balance",
-                    calculation: "Percentage of parent's wallet balance"
+                    incomeSource: "Total team members' wallet balance",
+                    calculation: "Percentage of total team members' wallet balance"
                 },
                 digitLevels: {
                     description: "Digit levels are based on your direct referrals and your own wallet balance. More referrals and higher wallet balance unlock higher levels.",
