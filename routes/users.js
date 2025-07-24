@@ -3910,4 +3910,148 @@ router.get('/benefit-structure', auth, async (req, res) => {
     }
 });
 
+// Test character level calculation API
+router.get('/test-character-level-calculation', auth, async (req, res) => {
+    try {
+        const userId = req.user.id;
+        const LevelService = require('../services/levelService');
+        const Level = require('../models/level.model');
+        
+        // Get user and level data
+        const user = await User.findById(userId);
+        let level = await Level.findOne({ userId });
+        
+        if (!level) {
+            level = await LevelService.initializeLevel(userId);
+        }
+        
+        // Get direct referrals with their balances
+        const directReferrals = await User.find({ referredBy: userId })
+            .select('name email phone normalWallet.balance createdAt');
+        
+        // Calculate total team balance
+        const totalTeamBalance = directReferrals.reduce((sum, ref) => {
+            return sum + (ref.normalWallet?.balance || 0);
+        }, 0);
+        
+        // Calculate character level income
+        const characterLevelIncome = await LevelService.calculateCharacterLevelIncome(userId);
+        
+        // Get character level percentages
+        const characterLevelPercentages = {
+            'A': 0.2,      // 0.05% of total team balance
+            'B': 0.025,     // 0.025% of total team balance
+            'C': 0.0125,    // 0.0125% of total team balance
+            'D': 0.00625,   // 0.00625% of total team balance
+            'E': 0.003125   // 0.003125% of total team balance
+        };
+        
+        // Manual calculation for verification
+        const currentLevel = level.characterLevel?.current;
+        const percentage = characterLevelPercentages[currentLevel] || 0;
+        const manualCalculation = (totalTeamBalance * percentage) / 100;
+        
+        res.json({
+            success: true,
+            data: {
+                user: {
+                    id: user._id,
+                    name: user.name,
+                    email: user.email,
+                    characterLevel: currentLevel
+                },
+                team: {
+                    totalMembers: directReferrals.length,
+                    totalBalance: totalTeamBalance,
+                    members: directReferrals.map(ref => ({
+                        name: ref.name,
+                        email: ref.email,
+                        balance: ref.normalWallet?.balance || 0
+                    }))
+                },
+                calculation: {
+                    characterLevel: currentLevel,
+                    percentage: percentage,
+                    totalTeamBalance: totalTeamBalance,
+                    manualCalculation: manualCalculation,
+                    serviceCalculation: characterLevelIncome,
+                    calculationMatch: Math.abs(manualCalculation - characterLevelIncome) < 0.01
+                },
+                percentages: characterLevelPercentages
+            }
+        });
+        
+    } catch (error) {
+        console.error('Error testing character level calculation:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Error testing character level calculation',
+            error: error.message
+        });
+    }
+});
+
+// Test specific character level calculation with given values
+router.post('/test-specific-calculation', auth, async (req, res) => {
+    try {
+        const { teamBalance, characterLevel } = req.body;
+        
+        if (!teamBalance || !characterLevel) {
+            return res.status(400).json({
+                success: false,
+                message: 'Please provide teamBalance and characterLevel'
+            });
+        }
+        
+        // Character level percentages
+        const characterLevelPercentages = {
+            'A': 0.2,       // 0.2% of total team balance (0.05 * 4)
+            'B': 0.025,     // 0.025% of total team balance
+            'C': 0.0125,    // 0.0125% of total team balance
+            'D': 0.00625,   // 0.00625% of total team balance
+            'E': 0.003125   // 0.003125% of total team balance
+        };
+        
+        const percentage = characterLevelPercentages[characterLevel] || 0;
+        const dailyIncome = (teamBalance * percentage) / 100;
+        
+        // Test with your specific values
+        const testValues = {
+            'A': {
+                teamBalance: 3736,
+                expectedIncome: (3736 * 0.05) / 100
+            },
+            'B': {
+                teamBalance: 1111,
+                expectedIncome: (1111 * 0.025) / 100
+            }
+        };
+        
+        res.json({
+            success: true,
+            data: {
+                input: {
+                    teamBalance: teamBalance,
+                    characterLevel: characterLevel
+                },
+                calculation: {
+                    percentage: percentage,
+                    dailyIncome: dailyIncome,
+                    formula: `(${teamBalance} * ${percentage}) / 100 = ${dailyIncome}`
+                },
+                testValues: testValues,
+                totalExpected: testValues['A'].expectedIncome + testValues['B'].expectedIncome
+            }
+        });
+        
+    } catch (error) {
+        console.error('Error testing specific calculation:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Error testing specific calculation',
+            error: error.message
+        });
+    }
+});
+
 module.exports = router;

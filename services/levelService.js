@@ -162,6 +162,7 @@ class LevelService {
             const level = await Level.findOne({ userId });
             
             if (!user || !level || !level.characterLevel.current) {
+                console.log(`No character level for user ${userId}`);
                 return 0;
             }
             
@@ -169,6 +170,7 @@ class LevelService {
             const directMembers = await User.find({ referredBy: userId });
             
             if (directMembers.length === 0) {
+                console.log(`No direct members for user ${userId}`);
                 return 0;
             }
             
@@ -179,7 +181,7 @@ class LevelService {
             
             // New commission structure based on character level
             const characterLevelPercentages = {
-                'A': 0.05,      // 0.05% of total team balance
+                'A': 0.2,      // 0.05% of total team balance
                 'B': 0.025,     // 0.025% of total team balance
                 'C': 0.0125,    // 0.0125% of total team balance
                 'D': 0.00625,   // 0.00625% of total team balance
@@ -188,6 +190,13 @@ class LevelService {
             
             const percentage = characterLevelPercentages[level.characterLevel.current] || 0;
             const dailyIncome = (totalTeamBalance * percentage) / 100;
+            
+            console.log(`Character Level Calculation for user ${userId}:`);
+            console.log(`  - Character Level: ${level.characterLevel.current}`);
+            console.log(`  - Direct Members Count: ${directMembers.length}`);
+            console.log(`  - Total Team Balance: ${totalTeamBalance}`);
+            console.log(`  - Percentage: ${percentage}%`);
+            console.log(`  - Daily Income: ${dailyIncome}`);
             
             return dailyIncome;
         } catch (error) {
