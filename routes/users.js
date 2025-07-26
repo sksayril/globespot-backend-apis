@@ -1675,38 +1675,36 @@ router.post('/claim-team-income', auth, async (req, res) => {
         
         // Validate character level criteria if user has character level
         if (currentCharacterLevel) {
-            // For character level, we need at least 1 direct referral with minimum wallet balance
-            const membersWithMinWallet = directMembers.filter(member => 
-                (member.normalWallet?.balance || 0) >= 50 // Minimum ₹50 wallet balance
-            ).length;
+            // Get character level criteria from level model
+            const characterLevelCriteria = userLevel.characterLevel.criteria[currentCharacterLevel];
             
-            if (membersWithMinWallet === 0) {
-                return res.status(400).json({
-                    success: false,
-                    message: 'Character level team criteria not fulfilled. Direct referrals must have minimum wallet balance.',
-                    data: {
-                        currentLevel: currentCharacterLevel,
-                        criteria: {
-                            required: {
-                                directMembers: 'At least 1',
-                                memberWalletMin: 50,
-                                description: 'Direct referrals must have minimum ₹50 wallet balance'
+            if (characterLevelCriteria) {
+                // Check if user meets the direct member count requirement for their character level
+                if (directMembersCount < characterLevelCriteria) {
+                    return res.status(400).json({
+                        success: false,
+                        message: `Character level ${currentCharacterLevel} criteria not fulfilled. Need ${characterLevelCriteria} direct members.`,
+                        data: {
+                            currentLevel: currentCharacterLevel,
+                            criteria: {
+                                required: {
+                                    directMembers: characterLevelCriteria,
+                                    description: `Need ${characterLevelCriteria} direct referrals for character level ${currentCharacterLevel}`
+                                },
+                                current: {
+                                    directMembers: directMembersCount,
+                                    totalDirectMembers: directMembersCount
+                                },
+                                met: {
+                                    directMembers: directMembersCount >= characterLevelCriteria
+                                }
                             },
-                            current: {
-                                directMembers: directMembersCount,
-                                membersWithMinWallet: membersWithMinWallet,
-                                totalDirectMembers: directMembersCount
-                            },
-                            met: {
-                                directMembers: directMembersCount > 0,
-                                memberWalletMin: membersWithMinWallet > 0
-                            }
-                        },
-                        dailyTeamIncome: dailyTeamIncome,
-                        characterLevelIncome: characterLevelIncome,
-                        digitLevelIncome: digitLevelIncome
-                    }
-                });
+                            dailyTeamIncome: dailyTeamIncome,
+                            characterLevelIncome: characterLevelIncome,
+                            digitLevelIncome: digitLevelIncome
+                        }
+                    });
+                }
             }
         }
         

@@ -15,12 +15,19 @@ const levelSchema = new mongoose.Schema({
             default: null,
             required: false
         },
+        criteria: {
+            A: { type: Number, default: 5 },      // 5 direct members required
+            B: { type: Number, default: 10 },     // 10 direct members required
+            C: { type: Number, default: 20 },     // 20 direct members required
+            D: { type: Number, default: 40 },     // 40 direct members required
+            E: { type: Number, default: 80 }      // 80 direct members required
+        },
         percentages: {
-            A: { type: Number, default: 0.05 },      // 0.05% of total team balance
-            B: { type: Number, default: 0.025 },     // 0.025% of total team balance
-            C: { type: Number, default: 0.0125 },    // 0.0125% of total team balance
-            D: { type: Number, default: 0.00625 },   // 0.00625% of total team balance
-            E: { type: Number, default: 0.003125 }   // 0.003125% of total team balance
+            A: { type: Number, default: 0.05 },      // 0.05% of total direct members balance
+            B: { type: Number, default: 0.025 },     // 0.025% of total direct members balance
+            C: { type: Number, default: 0.0125 },    // 0.0125% of total direct members balance
+            D: { type: Number, default: 0.00625 },   // 0.00625% of total direct members balance
+            E: { type: Number, default: 0.003125 }   // 0.003125% of total direct members balance
         },
         lastCalculated: {
             type: Date,

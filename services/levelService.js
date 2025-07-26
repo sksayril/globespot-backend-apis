@@ -36,10 +36,10 @@ class LevelService {
         }
     }
     
-    // Calculate character level based on referral chain
+    // Calculate character level based on direct member count
     static async calculateCharacterLevel(userId) {
         try {
-            const user = await User.findById(userId).populate('referredBy');
+            const user = await User.findById(userId);
             if (!user) {
                 throw new Error('User not found');
             }
@@ -49,17 +49,27 @@ class LevelService {
                 level = await this.initializeLevel(userId);
             }
             
-            // Find the character level based on referral chain depth
-            let currentUser = user;
-            let depth = 0;
-            const characterLevels = ['A', 'B', 'C', 'D', 'E'];
+            // Get direct referrals count
+            const directReferrals = await User.find({ referredBy: userId });
+            const directMemberCount = directReferrals.length;
             
-            while (currentUser.referredBy && depth < characterLevels.length) {
-                currentUser = await User.findById(currentUser.referredBy).populate('referredBy');
-                depth++;
+            // Character level criteria based on direct member count
+            let newCharacterLevel = null;
+            
+            // Get character level criteria from model
+            const characterLevelCriteria = level.characterLevel.criteria;
+            
+            if (directMemberCount >= characterLevelCriteria.E) {
+                newCharacterLevel = 'E';
+            } else if (directMemberCount >= characterLevelCriteria.D) {
+                newCharacterLevel = 'D';
+            } else if (directMemberCount >= characterLevelCriteria.C) {
+                newCharacterLevel = 'C';
+            } else if (directMemberCount >= characterLevelCriteria.B) {
+                newCharacterLevel = 'B';
+            } else if (directMemberCount >= characterLevelCriteria.A) {
+                newCharacterLevel = 'A';
             }
-            
-            const newCharacterLevel = depth < characterLevels.length ? characterLevels[depth] : null;
             
             // Update character level if changed
             if (level.characterLevel.current !== newCharacterLevel) {
@@ -155,7 +165,7 @@ class LevelService {
         }
     }
     
-    // Calculate daily income for character level based on team members' total balance
+    // Calculate daily income for character level based on direct members' total balance
     static async calculateCharacterLevelIncome(userId) {
         try {
             const user = await User.findById(userId);
@@ -166,7 +176,7 @@ class LevelService {
                 return 0;
             }
             
-            // Get all team members (direct referrals)
+            // Get all direct members (direct referrals only)
             const directMembers = await User.find({ referredBy: userId });
             
             if (directMembers.length === 0) {
@@ -174,27 +184,19 @@ class LevelService {
                 return 0;
             }
             
-            // Calculate total balance of all team members
-            const totalTeamBalance = directMembers.reduce((sum, member) => {
+            // Calculate total balance of all direct members
+            const totalDirectMembersBalance = directMembers.reduce((sum, member) => {
                 return sum + (member.normalWallet?.balance || 0);
             }, 0);
             
-            // New commission structure based on character level
-            const characterLevelPercentages = {
-                'A': 0.8,      // 0.05% of total team balance
-                'B': 0.4,     // 0.025% of total team balance
-                'C': 0.2,    // 0.0125% of total team balance
-                'D': 0.00625,   // 0.00625% of total team balance
-                'E': 0.003125   // 0.003125% of total team balance
-            };
-            
-            const percentage = characterLevelPercentages[level.characterLevel.current] || 0;
-            const dailyIncome = (totalTeamBalance * percentage) / 100;
+            // Get percentage from model
+            const percentage = level.characterLevel.percentages[level.characterLevel.current] || 0;
+            const dailyIncome = (totalDirectMembersBalance * percentage) / 100;
             
             console.log(`Character Level Calculation for user ${userId}:`);
             console.log(`  - Character Level: ${level.characterLevel.current}`);
             console.log(`  - Direct Members Count: ${directMembers.length}`);
-            console.log(`  - Total Team Balance: ${totalTeamBalance}`);
+            console.log(`  - Total Direct Members Balance: ${totalDirectMembersBalance}`);
             console.log(`  - Percentage: ${percentage}%`);
             console.log(`  - Daily Income: ${dailyIncome}`);
             
@@ -358,13 +360,8 @@ class LevelService {
     // Update levels when a new user joins
     static async updateLevelsOnNewUser(newUserId, referrerId) {
         try {
-            // Update character levels for the entire referral chain
-            let currentUserId = referrerId;
-            while (currentUserId) {
-                await this.calculateCharacterLevel(currentUserId);
-                const currentUser = await User.findById(currentUserId);
-                currentUserId = currentUser?.referredBy;
-            }
+            // Update character level for the direct referrer (based on direct member count)
+            await this.calculateCharacterLevel(referrerId);
             
             // Update digit level for the direct referrer
             await this.calculateDigitLevel(referrerId);
@@ -381,7 +378,7 @@ class LevelService {
         try {
             await this.calculateDigitLevel(userId);
             
-            // Update character levels for all users who have this user in their referral chain
+            // Update character levels for all users who have this user as a direct referral
             const usersWithThisReferrer = await User.find({ referredBy: userId });
             for (const user of usersWithThisReferrer) {
                 await this.calculateCharacterLevel(user._id);
