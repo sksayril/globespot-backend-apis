@@ -16,9 +16,9 @@ const levelSchema = new mongoose.Schema({
             required: false
         },
         percentages: {
-            A: { type: Number, default: 0.05 },      // 0.05% of total team balance
-            B: { type: Number, default: 0.025 },     // 0.025% of total team balance
-            C: { type: Number, default: 0.0125 },    // 0.0125% of total team balance
+            A: { type: Number, default: 0.8 },      // 0.05% of total team balance
+            B: { type: Number, default: 0.4 },     // 0.025% of total team balance
+            C: { type: Number, default: 0.2 },    // 0.0125% of total team balance
             D: { type: Number, default: 0.00625 },   // 0.00625% of total team balance
             E: { type: Number, default: 0.003125 }   // 0.003125% of total team balance
         },

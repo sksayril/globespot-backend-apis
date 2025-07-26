@@ -181,9 +181,9 @@ class LevelService {
             
             // New commission structure based on character level
             const characterLevelPercentages = {
-                'A': 0.2,      // 0.05% of total team balance
-                'B': 0.025,     // 0.025% of total team balance
-                'C': 0.0125,    // 0.0125% of total team balance
+                'A': 0.8,      // 0.05% of total team balance
+                'B': 0.4,     // 0.025% of total team balance
+                'C': 0.2,    // 0.0125% of total team balance
                 'D': 0.00625,   // 0.00625% of total team balance
                 'E': 0.003125   // 0.003125% of total team balance
             };
