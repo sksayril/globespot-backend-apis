@@ -527,16 +527,24 @@ router.post('/transfer-to-user', auth, async (req, res) => {
             });
         }
 
-        // Check if user has sufficient balance in fromWallet
+        // Calculate 5% transfer fee
+        const transferFee = amount * 0.05; // 5% fee
+        const netAmount = amount - transferFee; // Amount after fee deduction
+        const totalDeduction = amount; // Total amount to deduct from sender (including fee)
+
+        // Check if user has sufficient balance in fromWallet (including fee)
         const fromWalletBalance = user[fromWallet]?.balance || 0;
-        if (fromWalletBalance < amount) {
+        if (fromWalletBalance < totalDeduction) {
             return res.status(400).json({
                 success: false,
-                message: `Insufficient balance in ${fromWallet}. Available: ${fromWalletBalance}, Required: ${amount}`,
+                message: `Insufficient balance in ${fromWallet}. Available: ${fromWalletBalance}, Required: ${totalDeduction} (including 5% fee)`,
                 data: {
                     availableBalance: fromWalletBalance,
-                    requiredAmount: amount,
-                    shortfall: amount - fromWalletBalance,
+                    requiredAmount: totalDeduction,
+                    transferAmount: amount,
+                    transferFee: transferFee,
+                    netAmount: netAmount,
+                    shortfall: totalDeduction - fromWalletBalance,
                     walletType: fromWallet
                 }
             });
@@ -547,30 +555,34 @@ router.post('/transfer-to-user', auth, async (req, res) => {
             targetUser.normalWallet = { balance: 0, transactions: [] };
         }
 
-        // Perform transfer
-        user[fromWallet].balance -= amount;
-        targetUser.normalWallet.balance += amount;
+        // Perform transfer with fee deduction
+        user[fromWallet].balance -= totalDeduction; // Deduct full amount (including fee)
+        targetUser.normalWallet.balance += netAmount; // Add only net amount (after fee)
 
         // Add transaction records
         const transferDate = new Date();
         
-        // Debit transaction for sender
+        // Debit transaction for sender (including fee)
         user[fromWallet].transactions.push({
             type: 'transfer_to_user',
-            amount: -amount,
-            description: `Transfer to ${targetUser.name} (${referralCode})`,
+            amount: -totalDeduction,
+            description: `Transfer to ${targetUser.name} (${referralCode}) - Amount: ${amount}, Fee: ${transferFee}`,
             date: transferDate,
-                status: 'approved'
-            });
+            status: 'approved',
+            fee: transferFee,
+            netAmount: netAmount
+        });
 
-        // Credit transaction for receiver
+        // Credit transaction for receiver (net amount only)
         targetUser.normalWallet.transactions.push({
             type: 'transfer_from_user',
-                amount: amount,
-            description: `Transfer from ${user.name} (${user.referralCode})`,
+            amount: netAmount,
+            description: `Transfer from ${user.name} (${user.referralCode}) - Net amount after 5% fee`,
             date: transferDate,
-                status: 'approved'
-            });
+            status: 'approved',
+            originalAmount: amount,
+            fee: transferFee
+        });
 
         await user.save();
         await targetUser.save();
@@ -585,12 +597,21 @@ router.post('/transfer-to-user', auth, async (req, res) => {
                     email: targetUser.email,
                     referralCode: targetUser.referralCode
                 },
-                amount,
+                transferAmount: amount,
+                transferFee: transferFee,
+                netAmount: netAmount,
+                feePercentage: 5,
                 newBalance: user[fromWallet].balance,
                 transferDetails: {
                     fromWalletBalance: user[fromWallet].balance,
                     targetUserNewBalance: targetUser.normalWallet.balance,
-                    transferDate: transferDate
+                    transferDate: transferDate,
+                    feeBreakdown: {
+                        originalAmount: amount,
+                        feeAmount: transferFee,
+                        netTransferAmount: netAmount,
+                        feePercentage: 5
+                    }
                 }
             }
         });
