@@ -41,6 +41,15 @@ router.post('/signup', async (req, res) => {
                     message: 'Invalid referral code.'
                 });
             }
+            
+            // Check if the referrer has been referred by someone (only referred users can refer others)
+            if (!referrer.referredBy) {
+                return res.status(400).json({
+                    success: false,
+                    message: 'This user cannot refer others. Only users who have been referred can refer new users.'
+                });
+            }
+            
             referredBy = referrer._id;
         }
 
