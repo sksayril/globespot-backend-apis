@@ -6,9 +6,30 @@ const { v4: uuidv4 } = require('uuid');
 const User = require('../models/user.model');
 const Deposit = require('../models/deposit.model');
 const Config = require('../models/config.model');
+const Notification = require('../models/notification.model');
 const { adminAuth } = require('../middleware/auth');
 const LevelService = require('../services/levelService');
 const SelfIncomeCronService = require('../services/selfincomecorn');
+
+// Helper function to create notifications
+const createNotification = async (title, content, userId, createdBy, type = 'success', priority = 'medium') => {
+    try {
+        const notification = new Notification({
+            title,
+            content,
+            type,
+            priority,
+            targetUsers: 'specific',
+            specificUsers: [userId],
+            createdBy
+        });
+        await notification.save();
+        return notification;
+    } catch (error) {
+        console.error('Error creating notification:', error);
+        return null;
+    }
+};
 
 // Admin Signup
 router.post('/signup', async (req, res) => {
@@ -319,42 +340,85 @@ router.post('/deposits/:depositId/approve', adminAuth, async (req, res) => {
             }
 
             await user.save();
+            
+            // Create notification for user about deposit approval
+            await createNotification(
+                'Deposit Approved!',
+                `Your deposit of ${deposit.amount} has been approved and added to your ${deposit.walletType} wallet.`,
+                user._id,
+                req.user._id
+            );
 
             // Process referral bonus (10% of first deposit) - triggers on normal wallet deposit
-            if (deposit.walletType === 'normal' && user.referredBy && user.normalWallet.transactions.length === 1) {
-                const referrer = await User.findById(user.referredBy);
-                if (referrer) {
-                    const bonusAmount = deposit.amount * 0.1; // 10% bonus
-                    referrer.normalWallet.balance += bonusAmount;
-                    referrer.normalWallet.transactions.push({
-                        type: 'referral_bonus',
-                        amount: bonusAmount,
-                        description: `Referral bonus from ${user.name}`,
-                        status: 'approved'
-                    });
-                    await referrer.save();
+            // Check if this is the first deposit by counting transactions BEFORE adding the current deposit
+            const isFirstDeposit = user.normalWallet.transactions.length === 0;
+            
+            if (deposit.walletType === 'normal' && user.referredBy && isFirstDeposit && deposit.amount > 0) {
+                try {
+                    const referrer = await User.findById(user.referredBy);
+                    if (referrer) {
+                        const bonusAmount = deposit.amount * 0.1; // 10% bonus
+                        referrer.normalWallet.balance += bonusAmount;
+                        referrer.normalWallet.transactions.push({
+                            type: 'referral_bonus',
+                            amount: bonusAmount,
+                            description: `Referral bonus from ${user.name}`,
+                            status: 'approved'
+                        });
+                        await referrer.save();
+                        
+                        // Create notification for referrer
+                        await createNotification(
+                            'Referral Bonus Received!',
+                            `You received ${bonusAmount} referral bonus for referring ${user.name}.`,
+                            referrer._id,
+                            req.user._id
+                        );
+                        
+                        console.log(`Referral bonus processed: ${bonusAmount} to ${referrer.name} for referring ${user.name}`);
+                    } else {
+                        console.log(`Referrer not found for user ${user.name} with referredBy: ${user.referredBy}`);
+                    }
+                } catch (referralError) {
+                    console.error('Error processing referral bonus:', referralError);
+                    // Don't fail the entire deposit approval if referral bonus fails
                 }
             }
 
             // Process first deposit bonus (use global percentage) - one time only
-            if (!user.firstDepositBonus.hasReceived) {
-                // Get global percentage
-                let config = await Config.findOne({ key: 'firstDepositBonusPercentage' });
-                let globalPercentage = config ? config.value : 10;
-                const bonusAmount = deposit.amount * (globalPercentage / 100);
-                user.normalWallet.balance += bonusAmount;
-                user.normalWallet.transactions.push({
-                    type: 'referral_bonus',
-                    amount: bonusAmount,
-                    description: `First deposit bonus (${globalPercentage}%)`,
-                    status: 'approved'
-                });
-                // Update first deposit bonus tracking
-                user.firstDepositBonus.hasReceived = true;
-                user.firstDepositBonus.amount = bonusAmount;
-                user.firstDepositBonus.percentage = globalPercentage;
-                user.firstDepositBonus.receivedAt = new Date();
-                await user.save();
+            if (!user.firstDepositBonus.hasReceived && deposit.amount > 0) {
+                try {
+                    // Get global percentage
+                    let config = await Config.findOne({ key: 'firstDepositBonusPercentage' });
+                    let globalPercentage = config ? config.value : 10;
+                    const bonusAmount = deposit.amount * (globalPercentage / 100);
+                    user.normalWallet.balance += bonusAmount;
+                    user.normalWallet.transactions.push({
+                        type: 'referral_bonus',
+                        amount: bonusAmount,
+                        description: `First deposit bonus (${globalPercentage}%)`,
+                        status: 'approved'
+                    });
+                    // Update first deposit bonus tracking
+                    user.firstDepositBonus.hasReceived = true;
+                    user.firstDepositBonus.amount = bonusAmount;
+                    user.firstDepositBonus.percentage = globalPercentage;
+                    user.firstDepositBonus.receivedAt = new Date();
+                    await user.save();
+                    
+                    // Create notification for user about first deposit bonus
+                    await createNotification(
+                        'First Deposit Bonus!',
+                        `Congratulations! You received ${bonusAmount} (${globalPercentage}%) first deposit bonus.`,
+                        user._id,
+                        req.user._id
+                    );
+                    
+                    console.log(`First deposit bonus processed: ${bonusAmount} (${globalPercentage}%) to ${user.name}`);
+                } catch (firstDepositError) {
+                    console.error('Error processing first deposit bonus:', firstDepositError);
+                    // Don't fail the entire deposit approval if first deposit bonus fails
+                }
             }
         }
 
